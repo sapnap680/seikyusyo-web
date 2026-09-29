@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>宛名見本</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #e8e8e8;
+      font-family: "Yu Gothic", "游ゴシック", "YuGothic", "Meiryo", sans-serif;
+    }
+    .label {
+      font-size: 13px;
+      color: #444;
+      margin: 0 0 8px;
+    }
+    .sheet {
+      width: 210mm;
+      background: #fff;
+      padding: 10mm;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15);
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 88mm;
+      column-gap: 4mm;
+      align-items: start;
+      min-height: 42mm;
+    }
+    .recipient-block {
+      padding-top: 7mm;
+      padding-right: 4mm;
+      min-width: 0;
+    }
+    #recipientTitle {
+      font-family: "游明朝", "Yu Mincho", "ＭＳ Ｐ明朝", "MS PMincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", serif;
+      font-size: 17px;
+      font-weight: 700;
+      margin-top: 0;
+      letter-spacing: 0.06em;
+      text-align: left;
+      white-space: nowrap;
+      line-height: 1.4;
+      word-break: keep-all;
+      overflow-wrap: normal;
+      display: inline-block;
+      width: fit-content;
+      max-width: 102mm;
+      border-bottom: 1.2px solid #000;
+      padding: 0 1.5mm 2mm;
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
+    #recipientTitle.recipient-wrap {
+      white-space: normal;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      line-break: anywhere;
+      width: 100%;
+      max-width: 102mm;
+    }
+    #recipientTitle.recipient-len-over-15 { font-size: 15px; letter-spacing: 0.04em; }
+    #recipientTitle.recipient-len-over-23 { font-size: 13.5px; letter-spacing: 0.02em; }
+    #recipientTitle.recipient-len-over-28 { font-size: 11.5px; letter-spacing: 0.01em; }
+    #recipientTitle.recipient-len-over-34 { font-size: 10.5px; letter-spacing: 0; }
+    .org {
+      text-align: right;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+    .title {
+      margin-top: 10mm;
+      text-align: center;
+      border-top: 1px solid #000;
+      border-bottom: 1px solid #000;
+      padding: 6mm 0;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+    }
+    .meta {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <p class="label">宛名見本（請求書PDFと同じ縮小・折り返しロジック）</p>
+  <div class="sheet" id="capture">
+    <div class="top">
+      <div>財 No 25-283</div>
+      <div>登録番号 T8-0110-0500-7501</div>
+    </div>
+    <div class="header">
+      <div class="recipient-block">
+        <div id="recipientTitle"></div>
+      </div>
+      <div class="org">
+        <div>一般財団法人全日本大学バスケットボール連盟</div>
+        <div>登録番号：T8011005007501</div>
+        <div>〒150-0002</div>
+        <div>東京都渋谷区渋谷3-17-2</div>
+        <div>清澤ビル6階</div>
+        <div>℡03-5459-3557</div>
+      </div>
+    </div>
+    <div class="title">請求書</div>
+    <div class="meta">表示テキスト長: <span id="len"></span> 文字 / 適用クラス: <span id="klass"></span> / 実フォント: <span id="fs"></span></div>
+  </div>
+  <script>
+    const name = "公益財団法人ジャパン・プロフェッショナル・バスケットボールリーグ";
+    const text = name + " 御中";
+    const el = document.getElementById("recipientTitle");
+    const totalLen = [...text].length;
+    let sizeClass = "";
+    if (totalLen >= 34) sizeClass = "recipient-len-over-34";
+    else if (totalLen >= 28) sizeClass = "recipient-len-over-28";
+    else if (totalLen >= 23) sizeClass = "recipient-len-over-23";
+    else if (totalLen >= 15) sizeClass = "recipient-len-over-15";
+    el.textContent = text;
+    if (sizeClass) el.classList.add(sizeClass);
+    document.getElementById("len").textContent = String(totalLen);
+    document.getElementById("klass").textContent = sizeClass || "(なし)";
+
+    requestAnimationFrame(() => {
+      let size = parseFloat(getComputedStyle(el).fontSize) || 16;
+      const minSize = 9.5;
+      while (size > minSize && el.scrollWidth > el.clientWidth + 1) {
+        size -= 0.5;
+        el.style.fontSize = size + "px";
+      }
+      if (el.scrollWidth > el.clientWidth + 1) {
+        el.classList.add("recipient-wrap");
+      }
+      document.getElementById("fs").textContent = getComputedStyle(el).fontSize +
+        (el.classList.contains("recipient-wrap") ? " / 折り返しあり" : " / 1行");
+    });
+  </script>
+</body>
+</html>

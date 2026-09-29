@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>請求書作成</title>
+  <script src="./js/ensure-local.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Segoe UI"', '"Hiragino Kaku Gothic ProN"', '"Noto Sans JP"', 'Meiryo', 'sans-serif'],
+          },
+          colors: {
+            brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b' },
+            blue: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#6366f1',500:'#4f46e5',600:'#4338ca',700:'#3730a3',800:'#312e81',900:'#1e1b4b',950:'#131033' },
+            cyan: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b' },
+            teal: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b' },
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-up { animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    button, a { transition: all 0.2s ease; }
+    button:active { transform: translateY(1px); }
+    .line-unit,
+    .line-qty,
+    .line-amount {
+      -moz-appearance: textfield;
+      appearance: textfield;
+      background-color: #f8fafc;
+      cursor: default;
+    }
+    .line-unit::-webkit-outer-spin-button,
+    .line-unit::-webkit-inner-spin-button,
+    .line-qty::-webkit-outer-spin-button,
+    .line-qty::-webkit-inner-spin-button,
+    .line-amount::-webkit-outer-spin-button,
+    .line-amount::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-100 to-slate-200">
+  <div class="bg-white/95 backdrop-blur-sm shadow-lg border-b-4 border-cyan-500">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center">
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">請求書作成</h1>
+      <div class="flex gap-2">
+        <a href="./format.html" class="px-5 py-2 bg-white border-2 border-cyan-500 text-cyan-700 rounded-xl font-bold hover:bg-cyan-50">書式設定</a>
+        <a href="./admin.html" class="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-bold hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">管理画面へ</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-6 pb-8 space-y-5">
+    <div class="bg-white rounded-2xl shadow-xl p-8 animate-fade-up space-y-4">
+      <h2 class="text-2xl font-bold text-gray-800 pb-3 border-b-2 border-cyan-500">請求書入力</h2>
+      <div class="border border-emerald-200 border-l-4 border-l-emerald-500 rounded-xl p-4 bg-emerald-50/70">
+        <h2 class="font-bold text-gray-800 mb-2">CSV一括作成</h2>
+        <ul class="text-sm text-gray-700 mb-3 list-disc pl-5 space-y-1">
+          <li><span class="font-bold text-emerald-700">大学・連盟用</span>：お支払期限・宛名・<strong>税率</strong>・内容1/単価/数/金額の明細CSV（税率は内容1の直前。貴学・明細表）</li>
+          <li><span class="font-bold text-indigo-700">企業用</span>：締め日・相手先住所・税抜金額などの企業CSV（貴社・3行表）</li>
+        </ul>
+        <div class="flex flex-wrap gap-3 items-center">
+          <input id="csvFileInput" type="file" accept=".csv,text/csv" class="text-sm">
+          <button id="csvImportUniversityBtn" type="button" class="px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700">大学・連盟用CSVを取り込む</button>
+          <button id="csvImportCorporateBtn" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700">企業用CSVを取り込む</button>
+        </div>
+      </div>
+
+      <form id="invoiceForm" class="space-y-5">
+        <section class="rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 class="font-bold text-gray-800 pb-2 border-b border-gray-200">基本情報</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">請求書番号</label>
+              <input id="invoiceNo" type="text" required placeholder="自動入力後に手動で変更可能" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">発行日</label>
+              <input id="issueDate" type="date" required class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div id="closingDateWrap">
+              <label class="block text-sm font-bold text-gray-700 mb-1">締め日</label>
+              <input id="closingDate" type="date" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">振込期限</label>
+              <input id="dueDate" type="date" required class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div id="federationContactWrap">
+              <label class="block text-sm font-bold text-gray-700 mb-1">担当者（当連盟理事）</label>
+              <input id="clientContact" type="text" placeholder="例: 榎田" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 class="font-bold text-gray-800 pb-2 border-b border-gray-200">請求先情報</h3>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">宛先種別（PDFの敬称）</label>
+            <select id="recipientKind" class="w-full md:w-72 border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              <option value="company" selected>企業・会社（手動フォーマット / 貴社）</option>
+              <option value="school">大学・連盟（明細フォーマット / 貴学）</option>
+            </select>
+            <p id="recipientKindHint" class="text-xs text-gray-500 mt-1"></p>
+          </div>
+          <div id="companyRecipientFields" class="space-y-4">
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">相手先会社名</label>
+              <input id="clientName" type="text" required class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">相手先 郵便番号</label>
+                <input id="clientZip" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">相手先 住所</label>
+                <input id="clientAddress" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+            </div>
+          </div>
+          <div id="schoolRecipientFields" class="hidden space-y-4">
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">宛名</label>
+              <input id="schoolClientName" type="text" placeholder="例: 北翔大学女子バスケットボール部" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 class="font-bold text-gray-800 pb-2 border-b border-gray-200">明細・金額</h3>
+          <div id="companyDetailFields" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">科目名（任意入力）</label>
+                <input id="subjectName" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">備考</label>
+                <input id="description" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">大会名（任意入力）</label>
+                <input id="category" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">依頼部署（任意入力）</label>
+                <input id="requestDepartment" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+            </div>
+          </div>
+
+          <div id="schoolDetailFields" class="hidden space-y-3">
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm">
+                <thead>
+                  <tr class="bg-cyan-50">
+                    <th class="border border-gray-300 px-2 py-2 text-left">内容</th>
+                    <th class="border border-gray-300 px-2 py-2 text-center w-28">単価</th>
+                    <th class="border border-gray-300 px-2 py-2 text-center w-20">数</th>
+                    <th class="border border-gray-300 px-2 py-2 text-center w-28">金額</th>
+                  </tr>
+                </thead>
+                <tbody id="lineItemsBody">
+                  <tr class="line-item-row" data-index="1">
+                    <td class="border border-gray-300 p-1"><input type="text" class="line-content w-full border rounded px-2 py-1.5" placeholder="内容1"></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-unit w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-qty w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" readonly tabindex="-1" class="line-amount w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                  </tr>
+                  <tr class="line-item-row" data-index="2">
+                    <td class="border border-gray-300 p-1"><input type="text" class="line-content w-full border rounded px-2 py-1.5" placeholder="内容2"></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-unit w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-qty w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" readonly tabindex="-1" class="line-amount w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                  </tr>
+                  <tr class="line-item-row" data-index="3">
+                    <td class="border border-gray-300 p-1"><input type="text" class="line-content w-full border rounded px-2 py-1.5" placeholder="内容3"></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-unit w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-qty w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" readonly tabindex="-1" class="line-amount w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                  </tr>
+                  <tr class="line-item-row" data-index="4">
+                    <td class="border border-gray-300 p-1"><input type="text" class="line-content w-full border rounded px-2 py-1.5" placeholder="内容4"></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-unit w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-qty w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" readonly tabindex="-1" class="line-amount w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                  </tr>
+                  <tr class="line-item-row" data-index="5">
+                    <td class="border border-gray-300 p-1"><input type="text" class="line-content w-full border rounded px-2 py-1.5" placeholder="内容5"></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-unit w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" inputmode="numeric" class="line-qty w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                    <td class="border border-gray-300 p-1"><input type="text" readonly tabindex="-1" class="line-amount w-full border rounded px-2 py-1.5 text-center" placeholder=""></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="schoolLineTotalHint" class="text-sm text-gray-600 font-bold">明細合計: ¥0</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-cyan-50 p-4 rounded-xl border border-cyan-200">
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">消費税率</label>
+              <select id="taxRate" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+                <option value="10">10%</option>
+                <option value="8">8%</option>
+                <option value="0">0%</option>
+                <option value="other">その他（発生額/消費税額を入力）</option>
+              </select>
+            </div>
+            <div id="normalTaxBaseCol">
+              <label class="block text-sm font-bold text-gray-700 mb-1">税抜金額</label>
+              <input id="baseAmountInput" type="number" min="0" value="0" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div id="normalTaxTotalCol">
+              <label class="block text-sm font-bold text-gray-700 mb-1">税込金額</label>
+              <input id="totalAmountInput" type="number" min="0" value="0" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+            </div>
+            <div id="directTaxInputCols" class="hidden md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">発生額（直接入力）</label>
+                <input id="occurrenceAmountInput" type="number" min="0" value="0" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">消費税額（直接入力）</label>
+                <input id="taxAmountDirectInput" type="number" min="0" value="0" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+              </div>
+            </div>
+          </div>
+
+          <p id="taxHint" class="text-sm text-gray-600 font-bold">消費税: ¥0</p>
+        </section>
+
+        <div class="flex gap-3">
+          <button type="submit" id="saveBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold hover:from-blue-700 hover:to-cyan-700 shadow-md">保存</button>
+          <button type="button" id="previewBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold hover:from-cyan-700 hover:to-blue-700 shadow-md">保存して印刷確認</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="./js/firebase.js"></script>
+  <script src="./js/db.js"></script>
+  <script src="./js/date-utils.js"></script>
+  <script>
+    const form = document.getElementById("invoiceForm");
+    const taxRate = document.getElementById("taxRate");
+    const baseAmountInput = document.getElementById("baseAmountInput");
+    const totalAmountInput = document.getElementById("totalAmountInput");
+    const occurrenceAmountInput = document.getElementById("occurrenceAmountInput");
+    const taxAmountDirectInput = document.getElementById("taxAmountDirectInput");
+    const normalTaxBaseCol = document.getElementById("normalTaxBaseCol");
+    const normalTaxTotalCol = document.getElementById("normalTaxTotalCol");
+    const directTaxInputCols = document.getElementById("directTaxInputCols");
+    const issueDate = document.getElementById("issueDate");
+    const closingDate = document.getElementById("closingDate");
+    const dueDate = document.getElementById("dueDate");
+    const invoiceNo = document.getElementById("invoiceNo");
+    const taxHint = document.getElementById("taxHint");
+    const csvFileInput = document.getElementById("csvFileInput");
+    const recipientKind = document.getElementById("recipientKind");
+    const schoolLineTotalHint = document.getElementById("schoolLineTotalHint");
+    let syncing = false;
+    let lastEdited = "base";
+
+    function isSchoolRecipient() {
+      return recipientKind.value === "school";
+    }
+
+    function updateRecipientKindUi() {
+      const school = isSchoolRecipient();
+      document.getElementById("closingDateWrap").classList.toggle("hidden", school);
+      document.getElementById("federationContactWrap").classList.toggle("hidden", school);
+      document.getElementById("companyRecipientFields").classList.toggle("hidden", school);
+      document.getElementById("schoolRecipientFields").classList.toggle("hidden", !school);
+      document.getElementById("companyDetailFields").classList.toggle("hidden", school);
+      document.getElementById("schoolDetailFields").classList.toggle("hidden", !school);
+      normalTaxBaseCol.classList.toggle("hidden", school || isDirectTaxMode());
+      normalTaxTotalCol.classList.toggle("hidden", school || isDirectTaxMode());
+
+      document.getElementById("clientName").required = !school;
+      document.getElementById("schoolClientName").required = school;
+      closingDate.required = !school;
+
+      const hint = document.getElementById("recipientKindHint");
+      if (hint) {
+        hint.textContent = school
+          ? "大学・連盟向けPDF（明細表・貴学）。締め日と当連盟理事名はPDFに出ません。依頼部署は「財務」で保存されます。"
+          : "企業向けPDF（3行サマリー表・貴社）。締め日と当連盟理事名がPDFに表示されます。";
+      }
+
+      if (school) {
+        syncAllLineItemAmounts();
+      } else {
+        recalculateByLastEdited();
+      }
+    }
+
+    function parseInputNumber(value) {
+      const n = Number(String(value ?? "").replace(/,/g, "").trim());
+      return Number.isFinite(n) ? n : Number.NaN;
+    }
+
+    function syncLineItemAmount(row) {
+      const unit = parseInputNumber(row.querySelector(".line-unit")?.value);
+      const qty = parseInputNumber(row.querySelector(".line-qty")?.value);
+      const amountEl = row.querySelector(".line-amount");
+      if (!amountEl) return;
+      if (Number.isFinite(unit) && Number.isFinite(qty)) {
+        amountEl.value = String(unit * qty);
+      } else {
+        amountEl.value = "";
+      }
+    }
+
+    function syncAllLineItemAmounts() {
+      document.querySelectorAll(".line-item-row").forEach(syncLineItemAmount);
+      syncSchoolLineTotalHint();
+    }
+
+    function collectLineItems() {
+      const items = [];
+      document.querySelectorAll(".line-item-row").forEach((row) => {
+        const content = row.querySelector(".line-content")?.value.trim() || "";
+        const unit = parseInputNumber(row.querySelector(".line-unit")?.value);
+        const qty = parseInputNumber(row.querySelector(".line-qty")?.value);
+        const amount = Number.isFinite(unit) && Number.isFinite(qty) ? unit * qty : 0;
+        items.push({
+          content,
+          unitPrice: Number.isFinite(unit) ? unit : 0,
+          quantity: Number.isFinite(qty) ? qty : 0,
+          amount,
+        });
+      });
+      return items;
+    }
+
+    function getSchoolLineTotal() {
+      return collectLineItems().reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    }
+
+    function syncSchoolLineTotalHint() {
+      if (!schoolLineTotalHint) return;
+      schoolLineTotalHint.textContent = `明細合計: ${yen(getSchoolLineTotal())}`;
+    }
+
+    function yen(value) {
+      return "¥" + Number(value || 0).toLocaleString("ja-JP");
+    }
+
+    function isDirectTaxMode() {
+      return taxRate.value === "other";
+    }
+
+    function syncDirectTaxHint() {
+      const occurrence = Number(occurrenceAmountInput.value || 0);
+      const tax = Number(taxAmountDirectInput.value || 0);
+      const billed = Math.max(0, occurrence + tax);
+      taxHint.textContent = `消費税: ${yen(tax)} / ご請求金額: ${yen(billed)}`;
+    }
+
+    function updateTaxInputModeUi() {
+      const direct = isDirectTaxMode();
+      const school = isSchoolRecipient();
+      normalTaxBaseCol.classList.toggle("hidden", direct || school);
+      normalTaxTotalCol.classList.toggle("hidden", direct || school);
+      directTaxInputCols.classList.toggle("hidden", !direct);
+      if (direct) {
+        syncDirectTaxHint();
+      } else if (school) {
+        syncSchoolLineTotalHint();
+      } else {
+        recalculateByLastEdited();
+      }
+    }
+
+    function setDefaultDates() {
+      const today = new Date();
+      const iso = today.toISOString().slice(0, 10);
+      issueDate.value = iso;
+      closingDate.value = iso;
+
+      const due = new Date(today);
+      due.setDate(due.getDate() + 30);
+      dueDate.value = due.toISOString().slice(0, 10);
+    }
+
+    async function loadNextInvoiceNo(forceSet) {
+      try {
+        const nextNo = await getNextInvoiceNumberFromInvoices();
+        if (forceSet || !invoiceNo.value.trim()) {
+          invoiceNo.value = nextNo;
+        }
+      } catch (error) {
+        console.error("次番号取得失敗:", error);
+        if (forceSet || !invoiceNo.value.trim()) {
+          invoiceNo.value = "1";
+        }
+      }
+    }
+
+    async function ensureInvoiceNo() {
+      if (invoiceNo.value.trim()) return;
+      await loadNextInvoiceNo(true);
+    }
+
+    function syncFromBase() {
+      if (isDirectTaxMode()) return;
+      if (syncing) return;
+      syncing = true;
+      lastEdited = "base";
+      const calc = calculateTaxBreakdown("tax_excluded", Number(taxRate.value), Number(baseAmountInput.value));
+      totalAmountInput.value = calc.occurrenceAmount;
+      taxHint.textContent = `消費税: ${yen(calc.taxAmount)}`;
+      syncing = false;
+    }
+
+    function syncFromTotal() {
+      if (isDirectTaxMode()) return;
+      if (syncing) return;
+      syncing = true;
+      lastEdited = "total";
+      const calc = calculateTaxBreakdown("tax_included", Number(taxRate.value), Number(totalAmountInput.value));
+      baseAmountInput.value = calc.baseAmount;
+      taxHint.textContent = `消費税: ${yen(calc.taxAmount)}`;
+      syncing = false;
+    }
+
+    function recalculateByLastEdited() {
+      if (isDirectTaxMode()) {
+        syncDirectTaxHint();
+        return;
+      }
+      if (lastEdited === "total") {
+        syncFromTotal();
+      } else {
+        syncFromBase();
+      }
+    }
+
+    async function submitInvoice(withPrint) {
+      const school = isSchoolRecipient();
+      if (school) {
+        const schoolName = document.getElementById("schoolClientName").value.trim();
+        if (!schoolName) {
+          alert("宛名を入力してください");
+          return;
+        }
+        const lineTotal = getSchoolLineTotal();
+        if (lineTotal <= 0) {
+          alert("明細の金額を1行以上入力してください");
+          return;
+        }
+      } else if (!document.getElementById("clientName").value.trim()) {
+        alert("相手先会社名を入力してください");
+        return;
+      } else if (!closingDate.value) {
+        alert("締め日を入力してください");
+        return;
+      }
+
+      recalculateByLastEdited();
+      await ensureInvoiceNo();
+      let calc;
+      if (school) {
+        const lineTotal = getSchoolLineTotal();
+        if (isDirectTaxMode()) {
+          const occurrenceDirect = Number(occurrenceAmountInput.value);
+          const taxDirect = Number(taxAmountDirectInput.value);
+          if (!Number.isFinite(occurrenceDirect) || occurrenceDirect < 0) {
+            alert("発生額は0以上の数値で入力してください");
+            return;
+          }
+          if (!Number.isFinite(taxDirect) || taxDirect < 0) {
+            alert("消費税額は0以上の数値で入力してください");
+            return;
+          }
+          calc = {
+            taxRate: "other",
+            baseAmount: occurrenceDirect,
+            taxAmount: taxDirect,
+            occurrenceAmount: occurrenceDirect,
+            billedAmount: occurrenceDirect + taxDirect,
+          };
+        } else {
+          calc = calculateTaxBreakdown("tax_included", Number(taxRate.value), lineTotal);
+        }
+      } else if (isDirectTaxMode()) {
+        const occurrenceDirect = Number(occurrenceAmountInput.value);
+        const taxDirect = Number(taxAmountDirectInput.value);
+        if (!Number.isFinite(occurrenceDirect) || occurrenceDirect < 0) {
+          alert("発生額は0以上の数値で入力してください");
+          return;
+        }
+        if (!Number.isFinite(taxDirect) || taxDirect < 0) {
+          alert("消費税額は0以上の数値で入力してください");
+          return;
+        }
+        calc = {
+          taxRate: "other",
+          baseAmount: occurrenceDirect,
+          taxAmount: taxDirect,
+          occurrenceAmount: occurrenceDirect,
+          billedAmount: occurrenceDirect + taxDirect,
+        };
+      } else {
+        calc = calculateTaxBreakdown("tax_excluded", Number(taxRate.value), Number(baseAmountInput.value));
+      }
+      const saveBtn = document.getElementById("saveBtn");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "保存中...";
+
+      const lineItems = school
+        ? collectLineItems()
+        : [{
+            content: document.getElementById("description").value.trim() || "",
+            unitPrice: calc.baseAmount,
+            amount: calc.baseAmount,
+          }];
+      const primaryDescription = school
+        ? (lineItems.find((item) => item.content)?.content || "")
+        : document.getElementById("description").value.trim();
+
+      try {
+        const invoice = {
+          invoiceNo: document.getElementById("invoiceNo").value.trim(),
+          issueDate: issueDate.value,
+          closingDate: school ? "" : closingDate.value,
+          dueDate: dueDate.value,
+          clientName: school
+            ? document.getElementById("schoolClientName").value.trim()
+            : document.getElementById("clientName").value.trim(),
+          clientContact: school ? "" : document.getElementById("clientContact").value.trim(),
+          clientZip: school ? "" : document.getElementById("clientZip").value.trim(),
+          clientAddress: school ? "" : document.getElementById("clientAddress").value.trim(),
+          subjectName: school ? "" : document.getElementById("subjectName").value.trim(),
+          category: school ? "" : document.getElementById("category").value.trim(),
+          requestDepartment: school ? "財務" : document.getElementById("requestDepartment").value.trim(),
+          description: primaryDescription,
+          taxRate: calc.taxRate,
+          baseInput: isDirectTaxMode() ? calc.baseAmount : Number(baseAmountInput.value),
+          totalInput: isDirectTaxMode() ? calc.billedAmount : Number(totalAmountInput.value),
+          baseAmount: calc.baseAmount,
+          taxAmount: calc.taxAmount,
+          occurrenceAmount: school ? calc.occurrenceAmount : calc.baseAmount,
+          billedAmount: school ? calc.billedAmount : (calc.baseAmount + calc.taxAmount),
+          sourceType: school ? "csv" : "manual",
+          recipientKind: recipientKind.value,
+          lineItems,
+          totalPaid: 0,
+          status: "unpaid"
+        };
+
+        const id = await saveInvoice(invoice);
+        await loadNextInvoiceNo(true);
+        alert("請求書を保存しました");
+        if (withPrint) {
+          window.open("./invoice-print.html?id=" + encodeURIComponent(id) + "&t=" + Date.now(), "_blank");
+        }
+      } catch (error) {
+        console.error(error);
+        alert("保存に失敗しました: " + error.message);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "保存";
+      }
+    }
+
+    function parseCsvRow(line) {
+      const values = [];
+      let cur = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i += 1) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+          continue;
+        }
+        if (ch === "," && !inQuotes) {
+          values.push(cur);
+          cur = "";
+          continue;
+        }
+        cur += ch;
+      }
+      values.push(cur);
+      return values.map((v) => v.trim());
+    }
+
+    function normalizeHeaderName(name) {
+      return String(name || "")
+        .replace(/\uFEFF/g, "")
+        .trim()
+        .toLowerCase()
+        .replace(/[ 　\t\r\n]/g, "")
+        .replace(/[()（）]/g, "");
+    }
+
+    function buildHeaderResolver(header) {
+      const normalized = header.map((h) => normalizeHeaderName(h));
+      return (aliases) => {
+        for (const alias of aliases) {
+          const key = normalizeHeaderName(alias);
+          const idx = normalized.findIndex((h) => h === key);
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+    }
+
+    function getCell(row, index) {
+      if (index < 0) return "";
+      return (row[index] || "").trim();
+    }
+
+    function toNumberOrNaN(value) {
+      const s = String(value ?? "").replace(/,/g, "").trim();
+      if (!s) return Number.NaN;
+      return Number(s);
+    }
+
+    function parseTaxRateInput(value, fallback = 10) {
+      const raw = String(value ?? "").trim();
+      if (!raw) return fallback;
+      if (/不課税|非課税|免税/.test(raw)) return 0;
+      const normalized = raw
+        .replace(/[％%]/g, "")
+        .replace(/消費税/g, "")
+        .replace(/対象/g, "")
+        .trim();
+      const n = Number(normalized);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function buildCsvHeaderContext(header) {
+      const resolveIdx = buildHeaderResolver(header);
+      const normalizedHeader = header.map((h) => normalizeHeaderName(h));
+      const indexSet = (aliases) => new Set(aliases.map((a) => normalizeHeaderName(a)));
+      function findNextIndex(aliases, afterIdx) {
+        const aliasSet = indexSet(aliases);
+        for (let i = Math.max(afterIdx + 1, 0); i < normalizedHeader.length; i += 1) {
+          if (aliasSet.has(normalizedHeader[i])) return i;
+        }
+        return -1;
+      }
+      function resolveIndexed(numberedAliases, fallbackAliases, count = 5, allowScan = true) {
+        const idxs = [];
+        let prev = -1;
+        for (let n = 1; n <= count; n += 1) {
+          const aliases = numberedAliases.map((base) => `${base}${n}`).concat(
+            numberedAliases.map((base) => `${base}_${n}`)
+          );
+          if (n === 1 && allowScan) aliases.push(...fallbackAliases);
+          let idx = resolveIdx(aliases);
+          if (idx < 0 && prev >= 0 && allowScan) idx = findNextIndex(fallbackAliases, prev);
+          idxs.push(idx);
+          if (idx >= 0) prev = idx;
+        }
+        return idxs;
+      }
+      return { resolveIdx, findNextIndex, resolveIndexed };
+    }
+
+    function collectLineItemsFromCsv(row, contentIdxs, unitIdxs, qtyIdxs, amountIdxs) {
+      const items = [];
+      for (let i = 0; i < 5; i += 1) {
+        const unit = toNumberOrNaN(getCell(row, unitIdxs[i]));
+        const qty = toNumberOrNaN(getCell(row, qtyIdxs[i]));
+        const amount = toNumberOrNaN(getCell(row, amountIdxs[i]));
+        const computed = Number.isFinite(amount)
+          ? amount
+          : (Number.isFinite(unit) && Number.isFinite(qty) ? unit * qty : 0);
+        items.push({
+          content: getCell(row, contentIdxs[i]),
+          unitPrice: Number.isFinite(unit) ? unit : 0,
+          quantity: Number.isFinite(qty) ? qty : 0,
+          amount: computed,
+        });
+      }
+      return items;
+    }
+
+    function csvYearHint(issueDateVal) {
+      if (/^\d{4}-/.test(issueDateVal || "")) return Number(issueDateVal.slice(0, 4));
+      return new Date().getFullYear();
+    }
+
+    async function importUniversityCsv(rawLines) {
+      const header = parseCsvRow(rawLines[0]);
+      const { resolveIdx, resolveIndexed } = buildCsvHeaderContext(header);
+      const dueDateIdx = resolveIdx(["dueDate", "お支払期限", "お支払い期限", "支払期限", "振込期限"]);
+      const clientNameIdx = resolveIdx(["宛名", "clientName", "相手先", "請求先", "御中"]);
+      const issueDateIdx = resolveIdx(["issueDate", "請求日", "発行日"]);
+      const invoiceNoIdx = resolveIdx(["invoiceNo", "No.", "No", "番号"]);
+      const contentIdxs = resolveIndexed(["内容"], ["内容"], 5, false);
+      const unitIdxs = resolveIndexed(["単価"], ["単価"], 5, false);
+      const qtyIdxs = resolveIndexed(["数", "数量"], ["数", "数量"], 5, false);
+      const amountIdxs = resolveIndexed(["金額"], ["金額"], 5, false);
+      let rateIdx = resolveIdx(["taxRate", "税率", "消費税率"]);
+      const content1Idx = contentIdxs[0];
+      if (rateIdx < 0 && content1Idx > 0) {
+        const beforeName = normalizeHeaderName(header[content1Idx - 1] || "");
+        const reserved = new Set(["お支払期限", "お支払い期限", "支払期限", "振込期限", "duedate", "宛名", "clientname", "相手先", "請求先", "御中", "請求日", "発行日", "issuedate"]);
+        if (beforeName && !reserved.has(beforeName)) {
+          rateIdx = content1Idx - 1;
+        }
+      }
+
+      const missing = [];
+      if (dueDateIdx < 0) missing.push("お支払期限");
+      if (clientNameIdx < 0) missing.push("宛名");
+      if (missing.length > 0) {
+        alert("大学・連盟用CSVの必須ヘッダーが不足しています: " + missing.join(", "));
+        return;
+      }
+
+      let nextNo = Number(await getNextInvoiceNumberFromInvoices());
+      if (!Number.isFinite(nextNo) || nextNo <= 0) nextNo = 1;
+
+      let created = 0;
+      const errors = [];
+      const todayIso = new Date().toISOString().slice(0, 10);
+
+      for (let lineNo = 1; lineNo < rawLines.length; lineNo += 1) {
+        const row = parseCsvRow(rawLines[lineNo]);
+        try {
+          const clientNameVal = getCell(row, clientNameIdx).replace(/[ 　]*(御中|様)\s*$/u, "").trim();
+          if (!clientNameVal) continue;
+
+          const issueDateVal = issueDateIdx >= 0
+            ? (parseFlexibleDate(getCell(row, issueDateIdx), csvYearHint(todayIso)) || todayIso)
+            : todayIso;
+          const dueDateVal = parseFlexibleDate(getCell(row, dueDateIdx), csvYearHint(issueDateVal));
+          if (!dueDateVal) {
+            throw new Error("お支払期限が読み取れません（例: 8月20日 / 2026-08-20）");
+          }
+
+          const lineItems = collectLineItemsFromCsv(row, contentIdxs, unitIdxs, qtyIdxs, amountIdxs);
+          const lineTotal = lineItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+          if (lineTotal <= 0) {
+            throw new Error("内容・単価・数・金額の明細を1行以上入力してください");
+          }
+
+          const taxRateVal = rateIdx >= 0 ? parseTaxRateInput(getCell(row, rateIdx), 10) : 10;
+          const safeRate = [0, 8, 10].includes(taxRateVal) ? taxRateVal : 10;
+          const calc = calculateTaxBreakdown("tax_included", safeRate, lineTotal);
+          const csvNo = getCell(row, invoiceNoIdx);
+
+          await saveInvoice({
+            invoiceNo: csvNo || String(nextNo++),
+            issueDate: issueDateVal,
+            closingDate: "",
+            dueDate: dueDateVal,
+            clientName: clientNameVal,
+            clientContact: "",
+            clientZip: "",
+            clientAddress: "",
+            subjectName: "",
+            category: "",
+            requestDepartment: "財務",
+            description: lineItems.find((item) => item.content)?.content || "",
+            taxRate: calc.taxRate,
+            baseInput: calc.baseAmount,
+            totalInput: calc.occurrenceAmount,
+            baseAmount: calc.baseAmount,
+            taxAmount: calc.taxAmount,
+            occurrenceAmount: calc.occurrenceAmount,
+            billedAmount: calc.billedAmount,
+            sourceType: "csv",
+            recipientKind: "school",
+            lineItems,
+            totalPaid: 0,
+            status: "unpaid",
+          });
+          created += 1;
+        } catch (error) {
+          errors.push(`行${lineNo + 1}: ${error.message}`);
+        }
+      }
+
+      await loadNextInvoiceNo(true);
+      if (errors.length === 0) {
+        alert(`大学・連盟用CSV取込完了: ${created}件作成しました`);
+      } else {
+        alert(`大学・連盟用CSV取込完了: ${created}件作成 / エラー${errors.length}件\n` + errors.slice(0, 5).join("\n"));
+      }
+    }
+
+    async function importCorporateCsv(rawLines) {
+      const header = parseCsvRow(rawLines[0]);
+      const { resolveIdx, resolveIndexed } = buildCsvHeaderContext(header);
+      const issueDateIdx = resolveIdx(["issueDate", "請求日", "発行日"]);
+      const closingDateIdx = resolveIdx(["closingDate", "締め日", "締切日", "締切"]);
+      const dueDateIdx = resolveIdx(["dueDate", "お支払期限", "お支払い期限", "支払期限", "振込期限"]);
+      const clientNameIdx = resolveIdx(["clientName", "相手先会社名", "相手先", "会社名"]);
+      const invoiceNoIdx = resolveIdx(["invoiceNo", "No.", "No", "番号"]);
+      const rateIdx = resolveIdx(["taxRate", "税率"]);
+      const baseIdx = resolveIdx(["baseAmount", "10%対象", "税抜金額", "対象金額"]);
+      const totalIdx = resolveIdx(["totalAmount", "ご請求金額", "請求金額", "税込金額"]);
+      const taxAmountIdx = resolveIdx(["消費税", "taxAmount"]);
+      const subjectIdx = resolveIdx(["subjectName", "科目名"]);
+      const categoryIdx = resolveIdx(["category", "大会名", "区分"]);
+      const descriptionIdx = resolveIdx(["description", "内容", "摘要", "備考"]);
+      const requestDeptIdx = resolveIdx(["requestDepartment", "依頼部署"]);
+      const contactIdx = resolveIdx(["clientContact", "担当者名", "相手先担当者名", "当連盟担当者名", "当連盟担当者名理事名", "担当者"]);
+      const zipIdx = resolveIdx(["clientZip", "相手先郵便番号", "郵便番号"]);
+      const addressIdx = resolveIdx(["clientAddress", "相手先住所", "住所"]);
+      const issuedFlagIdx = resolveIdx(["発行", "発行済", "ok"]);
+      const contentIdxs = resolveIndexed(["内容"], ["内容"]);
+      const unitIdxs = resolveIndexed(["単価"], ["単価"]);
+      const qtyIdxs = resolveIndexed(["数", "数量"], ["数", "数量"]);
+      const amountIdxs = resolveIndexed(["金額"], ["金額"]);
+
+      const missing = [];
+      if (closingDateIdx < 0) missing.push("締め日(closingDate)");
+      if (dueDateIdx < 0) missing.push("お支払期限(dueDate)");
+      if (clientNameIdx < 0) missing.push("相手先会社名(clientName)");
+      if (zipIdx < 0) missing.push("相手先郵便番号(clientZip)");
+      if (addressIdx < 0) missing.push("相手先住所(clientAddress)");
+      if (missing.length > 0) {
+        alert("企業用CSVの必須ヘッダーが不足しています: " + missing.join(", "));
+        return;
+      }
+
+      let nextNo = Number(await getNextInvoiceNumberFromInvoices());
+      if (!Number.isFinite(nextNo) || nextNo <= 0) nextNo = 1;
+
+      let created = 0;
+      const errors = [];
+      const todayIso = new Date().toISOString().slice(0, 10);
+
+      for (let lineNo = 1; lineNo < rawLines.length; lineNo += 1) {
+        const row = parseCsvRow(rawLines[lineNo]);
+        try {
+          const issuedFlag = issuedFlagIdx >= 0 ? getCell(row, issuedFlagIdx).toLowerCase() : "";
+          if (issuedFlag === "ok") continue;
+
+          const clientNameVal = getCell(row, clientNameIdx);
+          if (!clientNameVal) continue;
+
+          const issueDateVal = issueDateIdx >= 0
+            ? (parseFlexibleDate(getCell(row, issueDateIdx), csvYearHint(todayIso)) || todayIso)
+            : todayIso;
+          const closingDateVal = parseFlexibleDate(getCell(row, closingDateIdx), csvYearHint(issueDateVal));
+          const dueDateVal = parseFlexibleDate(getCell(row, dueDateIdx), csvYearHint(issueDateVal));
+          if (!dueDateVal) {
+            throw new Error("お支払期限は必須です");
+          }
+          if (!closingDateVal) {
+            throw new Error("企業用CSVでは締め日が必須です");
+          }
+          const zipVal = getCell(row, zipIdx);
+          const addressVal = getCell(row, addressIdx);
+          if (!zipVal || !addressVal) {
+            throw new Error("企業用CSVでは相手先郵便番号・相手先住所が必須です");
+          }
+
+          const taxRateVal = rateIdx >= 0 ? parseTaxRateInput(getCell(row, rateIdx), 10) : 10;
+          const safeRate = [0, 8, 10].includes(taxRateVal) ? taxRateVal : 10;
+          const lineItems = collectLineItemsFromCsv(row, contentIdxs, unitIdxs, qtyIdxs, amountIdxs);
+          const lineTotal = lineItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+          const baseRaw = baseIdx >= 0 ? toNumberOrNaN(getCell(row, baseIdx)) : Number.NaN;
+          const totalRaw = totalIdx >= 0 ? toNumberOrNaN(getCell(row, totalIdx)) : Number.NaN;
+          const taxRaw = taxAmountIdx >= 0 ? toNumberOrNaN(getCell(row, taxAmountIdx)) : Number.NaN;
+
+          let calc;
+          if (Number.isFinite(baseRaw) && baseRaw > 0) {
+            calc = calculateTaxBreakdown("tax_excluded", safeRate, baseRaw);
+            if (Number.isFinite(taxRaw) && taxRaw >= 0 && !Number.isFinite(totalRaw)) {
+              calc.taxAmount = taxRaw;
+              calc.occurrenceAmount = calc.baseAmount + taxRaw;
+              calc.billedAmount = calc.occurrenceAmount;
+            }
+          } else if (Number.isFinite(totalRaw) && totalRaw > 0) {
+            calc = calculateTaxBreakdown("tax_included", safeRate, totalRaw);
+          } else if (lineTotal > 0) {
+            calc = calculateTaxBreakdown("tax_included", safeRate, lineTotal);
+          } else {
+            throw new Error("ご請求金額(totalAmount) または 税抜金額 を入力してください");
+          }
+
+          const billedForSave = calc.baseAmount + calc.taxAmount;
+          const csvNo = getCell(row, invoiceNoIdx);
+          await saveInvoice({
+            invoiceNo: csvNo || String(nextNo++),
+            issueDate: issueDateVal,
+            closingDate: closingDateVal,
+            dueDate: dueDateVal,
+            clientName: clientNameVal,
+            clientContact: getCell(row, contactIdx),
+            clientZip: zipVal,
+            clientAddress: addressVal,
+            subjectName: getCell(row, subjectIdx),
+            category: getCell(row, categoryIdx),
+            requestDepartment: getCell(row, requestDeptIdx) || "",
+            description: getCell(row, descriptionIdx) || lineItems.find((item) => item.content)?.content || "",
+            taxRate: calc.taxRate,
+            baseInput: calc.baseAmount,
+            totalInput: billedForSave,
+            baseAmount: calc.baseAmount,
+            taxAmount: calc.taxAmount,
+            occurrenceAmount: calc.baseAmount,
+            billedAmount: billedForSave,
+            sourceType: "manual",
+            recipientKind: "company",
+            lineItems: lineItems.some((item) => item.content || item.amount)
+              ? lineItems
+              : [{ content: getCell(row, descriptionIdx), unitPrice: calc.baseAmount, quantity: 0, amount: calc.baseAmount }],
+            totalPaid: 0,
+            status: "unpaid",
+          });
+          created += 1;
+        } catch (error) {
+          errors.push(`行${lineNo + 1}: ${error.message}`);
+        }
+      }
+
+      await loadNextInvoiceNo(true);
+      if (errors.length === 0) {
+        alert(`企業用CSV取込完了: ${created}件作成しました`);
+      } else {
+        alert(`企業用CSV取込完了: ${created}件作成 / エラー${errors.length}件\n` + errors.slice(0, 5).join("\n"));
+      }
+    }
+
+    async function readCsvText(file) {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const hasJapanese = (s) => /[ぁ-んァ-ン一-龥]/.test(s);
+      const utf8 = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+      if (!utf8.includes("\uFFFD") && hasJapanese(utf8)) return utf8;
+      try {
+        const sjis = new TextDecoder("shift_jis").decode(bytes).replace(/^\uFEFF/, "");
+        if (hasJapanese(sjis)) return sjis;
+      } catch (error) {
+        // Chromium 以外では shift_jis が使えない場合がある
+      }
+      return utf8;
+    }
+
+    async function importCsvInvoices(importType) {
+      const file = csvFileInput.files && csvFileInput.files[0];
+      if (!file) {
+        alert("CSVファイルを選択してください");
+        return;
+      }
+
+      const text = await readCsvText(file);
+      const rawLines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+      if (rawLines.length < 2) {
+        alert("CSVデータが不足しています（ヘッダー+1行以上必要）");
+        return;
+      }
+
+      if (importType === "university") {
+        await importUniversityCsv(rawLines);
+        return;
+      }
+      await importCorporateCsv(rawLines);
+    }
+
+    baseAmountInput.addEventListener("input", syncFromBase);
+    totalAmountInput.addEventListener("input", syncFromTotal);
+    occurrenceAmountInput.addEventListener("input", syncDirectTaxHint);
+    taxAmountDirectInput.addEventListener("input", syncDirectTaxHint);
+    taxRate.addEventListener("change", () => {
+      updateTaxInputModeUi();
+      if (isSchoolRecipient()) syncSchoolLineTotalHint();
+    });
+    recipientKind.addEventListener("change", updateRecipientKindUi);
+    document.getElementById("lineItemsBody").addEventListener("input", (event) => {
+      const row = event.target.closest(".line-item-row");
+      if (!row) return;
+      if (event.target.classList.contains("line-unit") || event.target.classList.contains("line-qty")) {
+        syncLineItemAmount(row);
+        syncSchoolLineTotalHint();
+      }
+    });
+    document.getElementById("lineItemsBody").addEventListener("focusin", (event) => {
+      if (!event.target.classList.contains("line-unit") && !event.target.classList.contains("line-qty")) return;
+      if (event.target.value === "0") {
+        event.target.value = "";
+      }
+    });
+    document.getElementById("lineItemsBody").addEventListener("focusout", (event) => {
+      if (!event.target.classList.contains("line-unit") && !event.target.classList.contains("line-qty")) return;
+      const raw = event.target.value.trim();
+      const row = event.target.closest(".line-item-row");
+      if (!raw) {
+        event.target.value = "";
+        if (row) syncLineItemAmount(row);
+        syncSchoolLineTotalHint();
+        return;
+      }
+      const n = parseInputNumber(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        event.target.value = "";
+      } else {
+        event.target.value = String(n);
+      }
+      if (row) syncLineItemAmount(row);
+      syncSchoolLineTotalHint();
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await submitInvoice(false);
+    });
+
+    document.getElementById("previewBtn").addEventListener("click", async () => {
+      if (!form.reportValidity()) return;
+      await submitInvoice(true);
+    });
+    document.getElementById("csvImportUniversityBtn").addEventListener("click", async () => {
+      try {
+        await importCsvInvoices("university");
+      } catch (error) {
+        console.error(error);
+        alert("大学・連盟用CSV取込に失敗しました: " + error.message);
+      }
+    });
+    document.getElementById("csvImportCorporateBtn").addEventListener("click", async () => {
+      try {
+        await importCsvInvoices("corporate");
+      } catch (error) {
+        console.error(error);
+        alert("企業用CSV取込に失敗しました: " + error.message);
+      }
+    });
+
+    setDefaultDates();
+    syncFromBase();
+    updateTaxInputModeUi();
+    updateRecipientKindUi();
+    loadNextInvoiceNo(false);
+  </script>
+</body>
+</html>

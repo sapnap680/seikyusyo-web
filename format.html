@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>請求書の書式設定</title>
+  <script src="./js/ensure-local.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Segoe UI"', '"Hiragino Kaku Gothic ProN"', '"Noto Sans JP"', 'Meiryo', 'sans-serif'],
+          },
+          colors: {
+            brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b' },
+            blue: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#6366f1',500:'#4f46e5',600:'#4338ca',700:'#3730a3',800:'#312e81',900:'#1e1b4b',950:'#131033' },
+            cyan: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b' },
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-100 to-slate-200">
+  <div class="bg-white/95 backdrop-blur-sm shadow-lg border-b-4 border-cyan-500">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center">
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">書式設定</h1>
+      <div class="flex gap-2">
+        <a href="./invoice.html" class="px-5 py-2 bg-white border-2 border-cyan-500 text-cyan-700 rounded-xl font-bold hover:bg-cyan-50">請求書作成へ</a>
+        <a href="./admin.html" class="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-bold hover:from-blue-700 hover:to-cyan-700">管理画面へ</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-6 pb-8">
+    <form id="formatForm" class="bg-white rounded-2xl shadow-xl p-8 space-y-6" novalidate>
+      <p class="text-sm text-gray-600">請求書に印字する連盟情報と振込先を変更できます。保存すると、これから開く請求書すべてに反映されます。どの欄も <span class="font-bold">空欄のまま保存</span> できます。複数行の欄は <span class="font-bold">Enter で改行</span> でき、請求書にもそのまま出ます。</p>
+
+      <section class="rounded-xl border border-gray-200 p-5 space-y-4">
+        <h2 class="font-bold text-gray-800 pb-2 border-b-2 border-cyan-500">連盟情報</h2>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">団体名</label>
+          <textarea id="orgName" rows="2" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none resize-y"></textarea>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">郵便番号</label>
+            <input id="zip" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none" placeholder="150-0002">
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-bold text-gray-700 mb-1">住所（Enterで改行）</label>
+            <textarea id="address1" rows="2" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none resize-y"></textarea>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">建物名・階（Enterで改行）</label>
+          <textarea id="address2" rows="2" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none resize-y"></textarea>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">TEL</label>
+            <input id="tel" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">FAX</label>
+            <input id="fax" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">メール（大学用）</label>
+            <input id="email" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">適格請求書発行事業者 登録番号</label>
+          <input id="registrationNo" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none" placeholder="T8-0110-0500-7501">
+        </div>
+      </section>
+
+      <section class="rounded-xl border border-gray-200 p-5 space-y-4">
+        <h2 class="font-bold text-gray-800 pb-2 border-b-2 border-cyan-500">振込先情報</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">銀行名</label>
+            <input id="bankName" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">支店名</label>
+            <input id="branchName" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">口座種別</label>
+            <input id="accountType" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none" placeholder="普通預金">
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">口座番号</label>
+            <input id="accountNumber" type="text" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">口座名義（カナ）（Enterで改行）</label>
+          <textarea id="accountNameKana" rows="2" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none resize-y"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-700 mb-1">口座名義人（Enterで改行）</label>
+          <textarea id="accountHolder" rows="2" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 focus:border-cyan-500 outline-none resize-y"></textarea>
+        </div>
+      </section>
+
+      <div class="rounded-xl border-2 border-cyan-400 bg-cyan-50 p-4 text-sm leading-7">
+        <div class="font-bold text-cyan-800 mb-1">請求書に印字される振込先</div>
+        <div id="printBankPreview" class="whitespace-pre-line font-semibold text-gray-800"></div>
+      </div>
+
+      <div class="flex flex-wrap gap-3">
+        <button type="submit" id="saveBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-bold hover:from-blue-700 hover:to-cyan-700 shadow-md">保存</button>
+        <button type="button" id="previewManualBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold hover:from-cyan-700 hover:to-blue-700 shadow-md">企業用プレビュー</button>
+        <button type="button" id="previewCsvBtn" class="px-6 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-md">大学用プレビュー</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="./js/firebase.js"></script>
+  <script src="./js/db.js"></script>
+  <script>
+    const FIELDS = [
+      "orgName", "zip", "address1", "address2", "tel", "fax", "email", "registrationNo",
+      "bankName", "branchName", "accountType", "accountNumber", "accountNameKana", "accountHolder",
+    ];
+
+    function readForm() {
+      const data = {};
+      FIELDS.forEach((id) => {
+        data[id] = (document.getElementById(id).value || "").replace(/\r\n/g, "\n").replace(/^\s+|\s+$/g, "");
+      });
+      return data;
+    }
+
+    function rememberFormat(data) {
+      try {
+        localStorage.setItem("invoiceFormatLive", JSON.stringify(data || {}));
+      } catch (_) {}
+    }
+
+    function updatePrintBankPreview(data) {
+      const f = data || {};
+      const line1Parts = [f.bankName, f.branchName, f.accountType, f.accountNumber]
+        .filter((part) => String(part || "").trim());
+      const line1 = line1Parts.length ? `■振込先情報\n${line1Parts.join(" ")}` : "";
+      const el = document.getElementById("printBankPreview");
+      if (el) {
+        el.textContent = [line1, f.accountNameKana, f.accountHolder].filter(Boolean).join("\n");
+      }
+    }
+
+    function fillForm(data) {
+      FIELDS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = data[id] || "";
+      });
+      updatePrintBankPreview(data);
+    }
+
+    async function loadFormat() {
+      try {
+        const data = await getInvoiceFormat();
+        fillForm(data);
+      } catch (error) {
+        console.error(error);
+        alert("書式の読み込みに失敗しました: " + error.message);
+      }
+    }
+
+    document.getElementById("formatForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const btn = document.getElementById("saveBtn");
+      btn.disabled = true;
+      btn.textContent = "保存中...";
+      try {
+        const saved = await saveInvoiceFormat(readForm());
+        rememberFormat(saved);
+        updatePrintBankPreview(saved);
+        alert("書式を保存しました。これから開く請求書に反映されます。");
+      } catch (error) {
+        console.error(error);
+        alert("保存に失敗しました: " + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "保存";
+      }
+    });
+
+    async function openPreview(mockType) {
+      const saved = await saveInvoiceFormat(readForm());
+      rememberFormat(saved);
+      const fmt = encodeURIComponent(JSON.stringify(saved));
+      window.open("./invoice-print.html?mock=" + mockType + "&t=" + Date.now() + "&fmt=" + fmt, "_blank");
+    }
+
+    document.getElementById("previewManualBtn").addEventListener("click", async () => {
+      try {
+        await openPreview("manual");
+      } catch (error) {
+        console.error(error);
+        alert("プレビュー用の保存に失敗しました: " + error.message);
+      }
+    });
+
+    document.getElementById("previewCsvBtn").addEventListener("click", async () => {
+      try {
+        await openPreview("csv");
+      } catch (error) {
+        console.error(error);
+        alert("プレビュー用の保存に失敗しました: " + error.message);
+      }
+    });
+
+    document.getElementById("formatForm").addEventListener("input", () => {
+      updatePrintBankPreview(readForm());
+    });
+
+    loadFormat();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>請求書印刷</title>
+  <meta http-equiv="Cache-Control" content="no-store">
+  <script src="./js/ensure-local.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="./assets/stamps/stamp-data.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    body { font-family: "ＭＳ 明朝", "MS Mincho", serif; }
+    #sheet {
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      padding: 10mm;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+    .sheet-main {
+      display: block;
+    }
+    .stamp-area {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4mm;
+    }
+    .stamp-grid {
+      width: 57mm;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2mm;
+      text-align: center;
+      font-size: 8.5px;
+    }
+    .stamp-label {
+      font-weight: bold;
+      margin-bottom: 1mm;
+      white-space: nowrap;
+      line-height: 1.1;
+      min-height: 3mm;
+    }
+    .stamp-box {
+      border: 1px solid #111;
+      height: 11mm;
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+      overflow: visible;
+    }
+    .stamp-image {
+      position: absolute;
+      pointer-events: none;
+      user-select: none;
+      mix-blend-mode: multiply;
+      z-index: 2;
+    }
+    .stamp-round {
+      width: 9.5mm;
+      height: 9.5mm;
+      left: calc(50% - 4.75mm);
+      top: 0.5mm;
+      transform: rotate(4deg);
+      opacity: 0.72;
+    }
+    .enokida-stamp {
+      left: calc(50% - 4.75mm);
+    }
+    .ajimi-stamp {
+      left: calc(50% - 5.35mm);
+    }
+    .header-right {
+      position: relative;
+      overflow: visible;
+      max-width: 95mm;
+      min-width: 0;
+    }
+    .org-line,
+    #bankInfoMain,
+    #bankAccountKana,
+    #bankAccountHolder {
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 100%;
+    }
+    .federation-stamp {
+      position: absolute;
+      width: 32mm;
+      height: 32mm;
+      right: 2mm;
+      top: 3mm;
+      transform: rotate(0deg);
+      opacity: 0.86;
+    }
+    #sheet.csv-mode {
+      color: #000;
+      font-family: "游ゴシック", "Yu Gothic", "YuGothic", sans-serif;
+      font-size: 15px;
+    }
+    #sheet.csv-mode * {
+      font-family: "游ゴシック", "Yu Gothic", "YuGothic", sans-serif !important;
+      font-weight: 700 !important;
+    }
+    #sheet.csv-mode .sheet-main {
+      padding-top: 1mm;
+      line-height: 1.4;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+    #sheet.csv-mode #recipientTitle {
+      font-size: 17px;
+      font-weight: 700;
+      margin-top: 10mm !important;
+      letter-spacing: 0.06em;
+      text-align: left;
+      white-space: nowrap;
+      line-height: 1.4;
+      word-break: keep-all;
+      overflow-wrap: normal;
+      display: inline-block;
+      width: fit-content;
+      max-width: 102mm;
+      border-bottom: 1.2px solid #000;
+      padding: 0 1.5mm 2mm;
+      /* 宛名は請求書らしい明朝（游ゴシックだとPDFで薄く見えやすい） */
+      font-family: "游明朝", "Yu Mincho", "ＭＳ Ｐ明朝", "MS PMincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", serif !important;
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
+    /* 宛名は基本1行。長い場合のみ JS で縮小し、それでも足りないとき折り返し */
+    #recipientTitle {
+      font-family: "游明朝", "Yu Mincho", "ＭＳ Ｐ明朝", "MS PMincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", serif;
+      font-weight: 700;
+      white-space: nowrap;
+      word-break: keep-all;
+      overflow-wrap: normal;
+      display: inline-block;
+      width: fit-content;
+      max-width: 102mm;
+      line-height: 1.4;
+      letter-spacing: 0.06em;
+      border-bottom: 1.2px solid #000;
+      padding: 0 1.5mm 2mm;
+    }
+    #recipientTitle.recipient-wrap {
+      white-space: normal;
+      /* 日本語の長い法人名でも確実に折り返す */
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      line-break: anywhere;
+      width: 100%;
+      max-width: 102mm;
+    }
+    #recipientTitle.recipient-len-over-15,
+    #sheet.csv-mode #recipientTitle.recipient-len-over-15 {
+      font-size: 15px;
+      letter-spacing: 0.04em;
+      line-height: 1.35;
+    }
+    #recipientTitle.recipient-len-over-23,
+    #sheet.csv-mode #recipientTitle.recipient-len-over-23 {
+      font-size: 13.5px;
+      letter-spacing: 0.02em;
+      line-height: 1.32;
+    }
+    #recipientTitle.recipient-len-over-28,
+    #sheet.csv-mode #recipientTitle.recipient-len-over-28 {
+      font-size: 11.5px;
+      letter-spacing: 0.01em;
+      line-height: 1.28;
+    }
+    #recipientTitle.recipient-len-over-34,
+    #sheet.csv-mode #recipientTitle.recipient-len-over-34 {
+      font-size: 10.5px;
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+    #sheet.csv-mode #headerTopRow {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 88mm;
+      align-items: start;
+      column-gap: 4mm;
+      margin-top: 2.5mm;
+    }
+    #sheet.csv-mode #issueDate {
+      display: none;
+    }
+    #sheet.csv-mode #csvIssueDateTop {
+      display: block;
+      font-weight: 700;
+      font-size: 14px;
+      margin-top: 1.2mm;
+    }
+    #sheet.csv-mode .invoice-title-label {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 2.8mm auto 0;
+      width: 156mm;
+      max-width: 100%;
+      height: 15mm;
+      padding: 0 0 0.35mm;
+      line-height: 1;
+      font-size: 34px !important;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      box-sizing: border-box;
+      overflow: visible;
+      position: relative;
+      z-index: 0;
+    }
+    #sheet.csv-mode .invoice-title-label::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 3.5mm;
+      transform: translateX(-50%);
+      width: 156mm;
+      max-width: 100%;
+      height: 15mm;
+      background: #fbe2d5;
+      z-index: -1;
+      pointer-events: none;
+    }
+    #sheet.csv-mode #dueDateBox {
+      margin-top: 7mm !important;
+    }
+    #sheet.csv-mode #dueDate {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      font-family: "Yu Gothic UI", "Yu Gothic", "YuGothic", sans-serif !important;
+      font-variant-numeric: tabular-nums lining-nums;
+      font-feature-settings: "tnum" 1, "lnum" 1;
+    }
+    #sheet.csv-mode .header-right {
+      position: relative;
+      overflow: visible;
+      background: #d9d9d9;
+      padding: 2.6mm 3.2mm;
+      width: 88mm;
+      max-width: 88mm;
+      min-width: 0;
+      flex: none;
+      margin-left: 0;
+      box-sizing: border-box;
+      text-align: left !important;
+      line-height: 1.5;
+      font-size: 13px;
+      font-weight: 700;
+      transform: none;
+      z-index: 2;
+    }
+    #sheet.csv-mode .header-right .org-line {
+      text-align: left !important;
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+    #sheet.csv-mode .federation-stamp {
+      position: absolute;
+      width: 31mm;
+      height: 31mm;
+      right: 1mm;
+      top: 4mm;
+      opacity: 0.9;
+      z-index: 5;
+      pointer-events: none;
+    }
+    #sheet.csv-mode .recipient-block {
+      margin: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 4mm;
+      padding-top: 7mm;
+      width: auto;
+      max-width: none;
+      flex: none;
+      min-width: 0;
+      transform: none;
+    }
+    #sheet.csv-mode #introCsv {
+      border: 1.2px solid #000;
+      padding: 5mm 4mm;
+      background: #fff;
+      margin-top: 2mm;
+    }
+    #sheet.csv-mode .csv-intro-note {
+      color: #111;
+      font-size: 13px;
+      margin-bottom: 1.5mm;
+    }
+    #sheet.csv-mode #billedAmountCsv {
+      font-size: 56px;
+      letter-spacing: 0.2mm;
+      line-height: 1.1;
+    }
+    #sheet.csv-mode #csvTotalAmount {
+      font-size: 24px;
+    }
+    #sheet.csv-mode #csvSummary > .csv-tax-exempt-note {
+      text-align: right;
+      padding-right: 1mm;
+    }
+    #sheet.csv-mode .csv-tax-exempt-note {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: 0.05em;
+    }
+    /* 企業向け: 今回発生テーブルを大きく */
+    #tableManual {
+      margin-top: 3mm;
+    }
+    #tableManual .csv-table {
+      width: 100%;
+      table-layout: fixed;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    #tableManual .csv-table th:nth-child(1),
+    #tableManual .csv-table td:nth-child(1) {
+      width: 28%;
+    }
+    #tableManual .csv-table th:nth-child(2),
+    #tableManual .csv-table td:nth-child(2) {
+      width: 26%;
+    }
+    #tableManual .csv-table th:nth-child(3),
+    #tableManual .csv-table td:nth-child(3) {
+      width: 46%;
+      overflow: hidden;
+    }
+    #tableManual .csv-table th {
+      font-size: 17px;
+      padding: 3.5mm 4mm !important;
+      background: #f3f4f6;
+    }
+    #tableManual .csv-table td {
+      padding: 4mm 4.5mm !important;
+      font-size: 18px;
+      line-height: 1.45;
+    }
+    #tableManual #manualOccurrenceAmount,
+    #tableManual #manualTaxAmount,
+    #tableManual #manualTotalAmount {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    #tableManual #manualDescription,
+    #tableManual #description {
+      font-size: 15px;
+      line-height: 1.7;
+      font-weight: 700;
+      text-align: center;
+      white-space: normal;
+      word-break: normal;
+      overflow-wrap: anywhere;
+      line-break: strict;
+      text-wrap: pretty;
+      letter-spacing: 0.02em;
+    }
+    #tableManual #description {
+      display: block;
+      max-width: 100%;
+    }
+    #tableManual .remark-keep {
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+    #sheet:not(.csv-mode) .invoice-title-block {
+      padding-top: 5mm;
+      padding-bottom: 5mm;
+    }
+    #sheet:not(.csv-mode) .invoice-title-label {
+      line-height: 1.15;
+    }
+    #sheet:not(.csv-mode) #issueDate {
+      display: block;
+      margin-top: 8mm !important;
+      font-size: 14px;
+    }
+    #sheet:not(.csv-mode) .stamp-area {
+      display: none !important;
+    }
+
+    /* 企業向け: 振込先情報を大きく */
+    #bankInfo {
+      font-size: 16px !important;
+      line-height: 1.85 !important;
+      font-weight: 700 !important;
+      color: #111 !important;
+      padding-top: 5mm !important;
+      margin-top: 2mm;
+      letter-spacing: 0.02em;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    #bankInfo #bankTransferFeeNote {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    #sheet.csv-mode .csv-table {
+      border-collapse: collapse;
+      width: 100%;
+      table-layout: fixed;
+      font-size: 13px;
+      margin-top: 1mm;
+    }
+    #sheet.csv-mode .csv-table th,
+    #sheet.csv-mode .csv-table td {
+      border: 1.2px solid #000;
+      padding: 1.6mm 2mm;
+      color: #000;
+    }
+    #sheet.csv-mode .csv-table th {
+      background: #fff;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+    #sheet.csv-mode .csv-table tbody td {
+      font-weight: 700;
+      vertical-align: middle;
+      height: auto;
+      min-height: 11mm;
+    }
+    #sheet.csv-mode .csv-table tbody tr:nth-child(odd) td {
+      background: #fef2ec;
+    }
+    #sheet.csv-mode .csv-table tbody tr:nth-child(even) td {
+      background: #fbe2d5;
+    }
+    #sheet.csv-mode .csv-table th:nth-child(1),
+    #sheet.csv-mode .csv-table td:nth-child(1) {
+      width: 54%;
+      text-align: center !important;
+    }
+    #sheet.csv-mode .csv-table td:nth-child(1) {
+      white-space: pre-line;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+      line-height: 1.35;
+    }
+    #sheet.csv-mode .csv-table th:nth-child(2),
+    #sheet.csv-mode .csv-table td:nth-child(2) {
+      width: 16%;
+      text-align: center !important;
+      font-size: 15px;
+    }
+    #sheet.csv-mode .csv-table th:nth-child(3),
+    #sheet.csv-mode .csv-table td:nth-child(3) {
+      width: 13%;
+      text-align: center;
+      font-size: 15px;
+    }
+    #sheet.csv-mode .csv-table th:nth-child(4),
+    #sheet.csv-mode .csv-table td:nth-child(4) {
+      width: 17%;
+      text-align: center !important;
+      font-size: 15px;
+    }
+    #sheet.csv-mode #csvSummary {
+      margin-top: 0;
+      margin-left: 0;
+      float: none;
+      width: 86mm;
+      max-width: 86mm;
+      display: flex;
+      flex-direction: column;
+      gap: 2.2mm;
+      flex: none;
+    }
+    #sheet.csv-mode .csv-total-box {
+      border: 1.2px solid #000;
+      background: #fef2ec;
+      padding: 3mm 4mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    #sheet.csv-mode .csv-tax-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 14px;
+    }
+    #sheet.csv-mode .csv-tax-table td {
+      border: 1.2px solid #000;
+      padding: 1.8mm 2.4mm;
+      font-weight: 700;
+    }
+    #sheet.csv-mode .csv-tax-table tr:nth-child(odd) td {
+      background: #fef2ec;
+    }
+    #sheet.csv-mode .csv-tax-table tr:nth-child(even) td {
+      background: #fbe2d5;
+    }
+    #sheet.csv-mode .csv-tax-table td:last-child {
+      text-align: right;
+      font-size: 16px;
+    }
+    #sheet.csv-mode .after-tables {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 86mm;
+      align-items: start;
+      column-gap: 6mm;
+      margin-top: 2.5mm;
+    }
+    #sheet.csv-mode #bankInfo {
+      border-top: 0;
+      padding-top: 0 !important;
+      margin-top: 0;
+      color: #000 !important;
+      line-height: 1.5 !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      width: auto !important;
+      max-width: 100%;
+      min-width: 0;
+      min-height: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      box-sizing: border-box;
+    }
+    #sheet.csv-mode #bankInfoMain,
+    #sheet.csv-mode #bankAccountKana,
+    #sheet.csv-mode #bankAccountHolder,
+    #sheet.csv-mode #bankTransferFeeNote {
+      display: block;
+      max-width: 100%;
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      font-size: 12px !important;
+      line-height: 1.5 !important;
+    }
+    #sheet:not(.csv-mode) #csvSummary {
+      display: none !important;
+    }
+    #sheet.csv-mode #federationContactLine {
+      display: none !important;
+    }
+    #sheet.csv-mode .stamp-area {
+      display: none !important;
+    }
+    #sheet.hide-stamp-area .stamp-area {
+      display: none !important;
+    }
+    #sheet.hide-stamp-area {
+      padding: 8mm 8mm 6mm;
+    }
+    #sheet.hide-stamp-area .sheet-main {
+      transform: scale(1.07);
+      transform-origin: top left;
+      width: 93.5%;
+      margin-top: 7mm;
+    }
+    #sheet.hide-stamp-area #federationContactLine {
+      font-size: 20px !important;
+      font-weight: 700 !important;
+      line-height: 1.45 !important;
+      border-bottom-width: 2px !important;
+      padding-right: 5mm !important;
+      display: inline-block;
+    }
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      html, body {
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .max-w-4xl {
+        max-width: none !important;
+        margin: 0 !important;
+      }
+      #sheet {
+        box-shadow: none !important;
+        border: none !important;
+        width: 210mm;
+        height: 296mm;
+        margin: 0;
+        page-break-inside: avoid;
+        break-inside: avoid-page;
+        page-break-after: avoid;
+        break-after: avoid-page;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-4">
+  <div class="max-w-4xl mx-auto">
+    <div class="no-print mb-4 flex gap-2">
+      <button onclick="window.print()" class="px-4 py-2 rounded bg-blue-600 text-white font-bold">印刷 / PDF保存</button>
+      <button onclick="downloadPdf()" class="px-4 py-2 rounded bg-emerald-600 text-white font-bold">PDFを直接保存</button>
+      <a href="./admin.html" class="px-4 py-2 rounded bg-cyan-600 text-white font-bold">管理画面へ</a>
+    </div>
+
+    <div id="sheet" class="bg-white border border-gray-300 shadow-xl space-y-6">
+      <div class="sheet-main">
+      <div class="flex justify-between text-sm">
+        <div>
+          <div><span id="invoiceNoLabel">財 No</span> <span id="financeInvoiceNo"></span></div>
+          <div id="csvIssueDateTop" class="hidden"></div>
+        </div>
+        <div id="registrationNo">登録番号 T8-0110-0500-7501</div>
+      </div>
+
+      <div id="headerTopRow" class="flex justify-between items-start mt-3">
+        <div class="text-sm leading-6 mt-3 ml-6 recipient-block">
+          <div id="clientZip"></div>
+          <div id="clientAddress"></div>
+          <div id="recipientTitle" class="text-xl font-bold mt-2"></div>
+        </div>
+        <div class="text-sm text-right leading-6 header-right">
+          <div id="manualOrgInfo">
+            <div id="orgZipManual" class="org-line">〒150-0002</div>
+            <div id="orgAddress1Manual" class="org-line">東京都渋谷区渋谷3-17-2</div>
+            <div id="orgAddress2Manual" class="org-line">清澤ビル6階</div>
+            <div id="orgNameManual" class="org-line">一般財団法人全日本大学バスケットボール連盟</div>
+            <div id="orgTelManual" class="org-line">TEL 03-5459-3557</div>
+            <div id="orgFaxManual" class="org-line">FAX 03-5459-3558</div>
+          </div>
+          <div id="csvOrgInfo" class="hidden">
+            <div id="orgNameCsv" class="org-line">一般財団法人全日本大学バスケットボール連盟</div>
+            <div id="orgRegCsv" class="org-line">登録番号：T8011005007501</div>
+            <div id="orgZipCsv" class="org-line">〒150-0002</div>
+            <div id="orgAddress1Csv" class="org-line">東京都渋谷区渋谷3-17-2</div>
+            <div id="orgAddress2Csv" class="org-line">清澤ビル6階</div>
+            <div id="orgTelCsv" class="org-line">℡03-5459-3557</div>
+            <div id="federationEmail" class="org-line">✉jubf.zaimu@gmail.com</div>
+          </div>
+          <div class="mt-3">
+            <span id="federationContactLine" class="inline-block border-b border-black text-left leading-6 pb-0.5 pr-2">当連盟担当</span>
+          </div>
+          <img
+            id="federationStampImage"
+            class="stamp-image federation-stamp"
+            alt="連盟印"
+            src=""
+          >
+        </div>
+      </div>
+
+      <div class="text-center border-y py-4 invoice-title-block">
+        <div class="text-4xl font-bold tracking-widest invoice-title-label">請求書</div>
+        <div id="issueDate" class="text-sm mt-1"></div>
+        <div id="closingDateRow" class="text-sm mt-1">締め日 <span id="closingDate"></span></div>
+        <div id="dueDateBox" class="mt-2 inline-flex items-center gap-2 border-2 border-black px-4 py-1 text-base font-bold">
+          <span>お支払い期限</span>
+          <span id="dueDate"></span>
+        </div>
+      </div>
+
+      <div id="introManual" class="border p-5 text-center">
+        <div class="text-sm text-gray-700 mb-1">下記の通り、ご請求申し上げます。</div>
+        <div id="billedAmount" class="text-4xl font-bold">¥0</div>
+      </div>
+
+      <div id="introCsv" class="border p-5 text-center hidden">
+        <div class="csv-intro-note text-sm text-gray-700 mb-1">下記の通り、ご請求申し上げます。</div>
+        <div class="csv-intro-note text-sm text-gray-700 mb-1">上記の期限までのお支払いをお願い致します。</div>
+        <div id="billedAmountCsv" class="text-4xl font-bold">¥0</div>
+      </div>
+
+      <div class="text-sm text-gray-700">
+        <!-- 赤い印鑑エリアは要望どおり未実装 -->
+      </div>
+
+      <div id="tableManual">
+        <table class="csv-table w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              <th class="border px-3 py-2 text-center">項目</th>
+              <th class="border px-3 py-2 text-center">金額</th>
+              <th class="border px-3 py-2 text-center">備考</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="border px-3 py-2 text-center">今回発生</td>
+              <td id="manualOccurrenceAmount" class="border px-3 py-2 text-right">¥0</td>
+              <td id="manualDescription" rowspan="3" class="border px-3 py-2 text-center align-middle"><span id="description"></span></td>
+            </tr>
+            <tr>
+              <td id="manualTaxLabel" class="border px-3 py-2 text-center">今回消費税（<span id="taxRate">10</span>%）</td>
+              <td id="manualTaxAmount" class="border px-3 py-2 text-right">¥0</td>
+            </tr>
+            <tr>
+              <td class="border px-3 py-2 text-center">今回ご請求</td>
+              <td id="manualTotalAmount" class="border px-3 py-2 text-right">¥0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="tableCsv" class="hidden">
+        <table class="csv-table w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              <th class="border px-3 py-2 text-center">内容</th>
+              <th class="border px-3 py-2 text-center">単価</th>
+              <th class="border px-3 py-2 text-center">数</th>
+              <th class="border px-3 py-2 text-center">金額</th>
+            </tr>
+          </thead>
+          <tbody id="lineItemsBody">
+            <tr><td class="border px-3 py-2">-</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td></tr>
+            <tr><td class="border px-3 py-2">-</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td></tr>
+            <tr><td class="border px-3 py-2">-</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td></tr>
+            <tr><td class="border px-3 py-2">-</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td></tr>
+            <tr><td class="border px-3 py-2">-</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td><td class="border px-3 py-2 text-right">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="after-tables">
+      <div id="bankInfo" class="text-sm text-gray-700 pt-3 border-t leading-7 font-semibold">
+        <div id="bankInfoMain">■振込先情報
+みずほ銀行 渋谷中央支店 普通預金 1870255</div>
+        <div id="bankAccountKana">ザイ）ゼンニホンダイガクバスケットボールレンメイ ダイヒョウ</div>
+        <div id="bankAccountHolder">ウエマツマサヒロ</div>
+        <span id="bankTransferFeeNote">※お振込み手数料は貴社ご負担にてお願いいたします。</span>
+      </div>
+      <div id="csvSummary" class="text-sm">
+          <div class="csv-total-box">
+            <span>ご請求金額</span>
+            <span id="csvTotalAmount">¥0</span>
+          </div>
+          <div id="csvTotalTaxNote" class="csv-tax-exempt-note hidden">（不課税）</div>
+          <div id="csvTaxTableWrap">
+            <table class="csv-tax-table">
+              <tbody>
+                <tr id="csvEightRateRow"><td id="csvEightRateLabel">8%対象</td><td id="csvEightBaseAmount">¥0</td></tr>
+                <tr id="csvEightTaxRow"><td>消費税</td><td id="csvEightTaxAmount">¥0</td></tr>
+                <tr id="csvTenRateRow"><td id="csvTenRateLabel">10%対象</td><td id="csvTenBaseAmount">¥0</td></tr>
+                <tr id="csvTenTaxRow"><td>消費税</td><td id="csvTenTaxAmount">¥0</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="stamp-area">
+        <div class="stamp-grid">
+          <div>
+            <div class="stamp-label">専務理事</div>
+            <div class="stamp-box">
+              <img
+                id="enokidaStampImage"
+                class="stamp-image stamp-round enokida-stamp"
+                alt="榎田印"
+                src=""
+                style="object-fit: cover; object-position: left center;"
+              >
+            </div>
+          </div>
+          <div>
+            <div class="stamp-label">財務委員長</div>
+            <div class="stamp-box">
+              <img
+                id="ajimiStampImage"
+                class="stamp-image stamp-round ajimi-stamp"
+                alt="安味印"
+                src=""
+                style="object-fit: cover; object-position: right center;"
+              >
+            </div>
+          </div>
+          <div>
+            <div class="stamp-label">担当者</div>
+            <div class="stamp-box"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/firebase.js"></script>
+  <script src="./js/db.js"></script>
+  <script src="./js/date-utils.js"></script>
+  <script>
+    let currentPdfName = "請求書";
+    let invoiceFormat = typeof DEFAULT_INVOICE_FORMAT === "object" ? { ...DEFAULT_INVOICE_FORMAT } : {};
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value || "";
+    }
+
+    function formatZipDisplay(zip) {
+      const z = String(zip || "").trim();
+      if (!z) return "";
+      return z.startsWith("〒") ? z : `〒${z}`;
+    }
+
+    function compactRegistrationNo(value) {
+      return String(value || "").replace(/[-\s]/g, "");
+    }
+
+    function readPassedFormat() {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get("fmt");
+      if (fromQuery) {
+        try {
+          const parsed = JSON.parse(fromQuery);
+          if (parsed && typeof parsed === "object") return parsed;
+        } catch (_) {}
+      }
+      try {
+        const live = JSON.parse(localStorage.getItem("invoiceFormatLive") || "null");
+        if (live && typeof live === "object") return live;
+      } catch (_) {}
+      return null;
+    }
+
+    async function loadAndApplyInvoiceFormat() {
+      const passed = readPassedFormat();
+      if (passed) applyInvoiceFormat(passed);
+
+      let data = passed || {};
+      try {
+        const snap = await db.collection("settings").doc("invoiceFormat").get();
+        if (snap.exists) {
+          data = snap.data() || data;
+        }
+      } catch (error) {
+        console.warn("書式設定のSDK読み込み:", error);
+        if (!Object.keys(data).length) {
+          try {
+            const res = await fetch("https://firestore.googleapis.com/v1/projects/kdaikda/databases/(default)/documents/settings/invoiceFormat");
+            if (res.ok) {
+              const json = await res.json();
+              const rest = {};
+              Object.keys(json.fields || {}).forEach((key) => {
+                const value = json.fields[key];
+                if (value && value.stringValue != null) rest[key] = value.stringValue;
+              });
+              data = rest;
+            }
+          } catch (restError) {
+            console.warn("書式設定のREST読み込み:", restError);
+          }
+        }
+      }
+      try {
+        const payload = typeof mergeInvoiceFormat === "function" ? mergeInvoiceFormat(data) : data;
+        localStorage.setItem("invoiceFormatLive", JSON.stringify(payload));
+      } catch (_) {}
+      applyInvoiceFormat(data);
+      return invoiceFormat;
+    }
+
+    function applyInvoiceFormat(format) {
+      const src = format || {};
+      const hasSavedFields = typeof DEFAULT_INVOICE_FORMAT === "object"
+        && Object.keys(DEFAULT_INVOICE_FORMAT).some((key) => Object.prototype.hasOwnProperty.call(src, key));
+      invoiceFormat = typeof mergeInvoiceFormat === "function"
+        ? mergeInvoiceFormat(src, !hasSavedFields)
+        : { ...(hasSavedFields ? {} : (typeof DEFAULT_INVOICE_FORMAT === "object" ? DEFAULT_INVOICE_FORMAT : {})), ...src };
+      const f = invoiceFormat;
+      const zip = formatZipDisplay(f.zip);
+      const tel = String(f.tel || "").trim();
+      const fax = String(f.fax || "").trim();
+      const email = String(f.email || "").trim();
+      const reg = String(f.registrationNo || "").trim();
+      const compactReg = compactRegistrationNo(reg);
+
+      setText("registrationNo", reg ? `登録番号 ${reg}` : "");
+      setText("orgZipManual", zip);
+      setText("orgAddress1Manual", f.address1);
+      setText("orgAddress2Manual", f.address2);
+      setText("orgNameManual", f.orgName);
+      setText("orgTelManual", tel ? `TEL ${tel}` : "");
+      setText("orgFaxManual", fax ? `FAX ${fax}` : "");
+
+      setText("orgNameCsv", f.orgName);
+      setText("orgRegCsv", compactReg ? `登録番号：${compactReg}` : (reg ? `登録番号：${reg}` : ""));
+      setText("orgZipCsv", zip);
+      setText("orgAddress1Csv", f.address1);
+      setText("orgAddress2Csv", f.address2);
+      setText("orgTelCsv", tel ? `℡${tel}` : "");
+      setText("federationEmail", email ? `✉${email}` : "");
+
+      const bankParts = [f.bankName, f.branchName, f.accountType, f.accountNumber]
+        .filter((part) => String(part || "").trim());
+      const bankLine = bankParts.length ? `■振込先情報\n${bankParts.join(" ")}` : "";
+      setText("bankInfoMain", bankLine);
+      setText("bankAccountKana", f.accountNameKana);
+      setText("bankAccountHolder", f.accountHolder);
+    }
+
+    function yen(value) {
+      return "¥" + Number(value || 0).toLocaleString("ja-JP");
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function formatRemarkChunk(chunk) {
+      const re = /([A-Za-z0-9][A-Za-z0-9.,+\-/%:]*)|([^A-Za-z0-9]+)/g;
+      let html = "";
+      let match;
+      while ((match = re.exec(chunk)) !== null) {
+        if (match[1]) {
+          html += `<span class="remark-keep">${escapeHtml(match[1])}</span>`;
+        } else {
+          html += escapeHtml(match[2])
+            .replace(/([、。・／/,])/g, "$1<wbr>")
+            .replace(/(として|について|における|および|または)/g, "$1<wbr>");
+        }
+      }
+      return html;
+    }
+
+    function formatRemarkHtml(text) {
+      const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+      if (!raw) return "";
+      return raw
+        .split(/\n+|[ \t\u3000]+/)
+        .filter((chunk) => chunk.length > 0)
+        .map((chunk) => formatRemarkChunk(chunk))
+        .join("<br>");
+    }
+
+    function setDescriptionText(text) {
+      const el = document.getElementById("description");
+      if (!el) return;
+      el.innerHTML = formatRemarkHtml(text);
+    }
+
+    function getFiscalYearTwoDigits(issueDate) {
+      const parts = String(issueDate || "").split("-");
+      if (parts.length !== 3) return "--";
+      const year = Number(parts[0]);
+      const month = Number(parts[1]);
+      const day = Number(parts[2]);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return "--";
+
+      // 会計年度: 4/1開始。1〜3月は前年年度扱い。
+      const fiscalYear = month >= 4 ? year : year - 1;
+      return String(fiscalYear % 100).padStart(2, "0");
+    }
+
+    function normalizeRecipientName(clientName) {
+      const raw = String(clientName || "").trim();
+      if (!raw) return "-";
+      // Remove trailing honorifics if already included in CSV/manual input.
+      return raw.replace(/[ 　]*(御中|様)\s*$/u, "").trim() || "-";
+    }
+
+    const RECIPIENT_LEN_SHRINK = 15;
+    const RECIPIENT_LEN_SMALL = 23;
+    const RECIPIENT_LEN_TINY = 28;
+    // 例: 公益財団法人ジャパン・プロフェッショナル・バスケットボールリーグ 御中
+    const RECIPIENT_LEN_XLONG = 34;
+
+    function countChars(value) {
+      return [...String(value || "")].length;
+    }
+
+    function formatInvoiceRecipient(clientName) {
+      const normalized = normalizeRecipientName(clientName);
+      return `${normalized} 御中`;
+    }
+
+    function getRecipientSizeClass(clientName) {
+      const displayText = formatInvoiceRecipient(clientName);
+      const totalLen = countChars(displayText);
+      if (totalLen >= RECIPIENT_LEN_XLONG) return "recipient-len-over-34";
+      if (totalLen >= RECIPIENT_LEN_TINY) return "recipient-len-over-28";
+      if (totalLen >= RECIPIENT_LEN_SMALL) return "recipient-len-over-23";
+      if (totalLen >= RECIPIENT_LEN_SHRINK) return "recipient-len-over-15";
+      return "";
+    }
+
+    let lastRecipientClientName = "";
+
+    function fitRecipientTitleElement(el) {
+      if (!el) return;
+      el.style.fontSize = "";
+      el.style.width = "";
+      el.classList.remove("recipient-wrap");
+      let size = parseFloat(getComputedStyle(el).fontSize) || 16;
+      const minSize = 9.5;
+      // 長い法人名（Bリーグ等）も幅に収まるまで縮小。それでも無理なら折り返し
+      while (size > minSize && el.scrollWidth > el.clientWidth + 1) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+      if (el.scrollWidth > el.clientWidth + 1) {
+        el.classList.add("recipient-wrap");
+      }
+    }
+
+    async function setRecipientTitle(clientName) {
+      const el = document.getElementById("recipientTitle");
+      if (!el) return;
+      lastRecipientClientName = String(clientName || "");
+      const text = formatInvoiceRecipient(clientName);
+      el.textContent = text;
+      el.style.fontSize = "";
+      el.style.width = "";
+      el.classList.remove(
+        "recipient-len-over-15",
+        "recipient-len-over-23",
+        "recipient-len-over-28",
+        "recipient-len-over-34",
+        "recipient-wrap"
+      );
+      const sizeClass = getRecipientSizeClass(clientName);
+      if (sizeClass) el.classList.add(sizeClass);
+
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      // レイアウト確定後に計測（PDFキャプチャ前にも再実行する）
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          fitRecipientTitleElement(el);
+          requestAnimationFrame(() => {
+            fitRecipientTitleElement(el);
+            resolve();
+          });
+        });
+      });
+    }
+
+    function formatFinanceNo(issueDate, invoiceNo) {
+      const fiscalYear = getFiscalYearTwoDigits(issueDate);
+      const numberPart = String(invoiceNo || "-");
+      return `${fiscalYear}-${numberPart}`;
+    }
+
+    function buildPdfFileName(issueDate, invoiceNo, clientName) {
+      const fiscalYear = getFiscalYearTwoDigits(issueDate);
+      const numberPart = String(invoiceNo || "-");
+      const normalized = normalizeRecipientName(clientName);
+      const raw = `【${fiscalYear}-${numberPart}】${normalized} 御中`;
+      return raw.replace(/[\\/:*?"<>|]/g, "_");
+    }
+
+    function renderLineItems(row) {
+      const items = Array.isArray(row.lineItems) ? row.lineItems.slice(0, 5) : [];
+      while (items.length < 5) {
+        items.push({ content: "", unitPrice: 0, amount: 0 });
+      }
+      const body = document.getElementById("lineItemsBody");
+      body.innerHTML = items.map((item) => {
+        const rawContent = String(item.content || "").replace(/\r\n/g, "\n").trim();
+        const content = rawContent
+          ? escapeHtml(rawContent).replace(/[ \t\u3000\n]+/g, "<br>")
+          : "-";
+        const unitValue = Number(item.unitPrice || 0);
+        const amountValue = Number(item.amount || 0);
+        const hasQuantity = item.quantity !== undefined && item.quantity !== null && String(item.quantity).trim() !== "";
+        const qtyValue = hasQuantity
+          ? Number(item.quantity || 0)
+          : (unitValue > 0 ? Math.round(amountValue / unitValue) : 0);
+        const unit = unitValue.toLocaleString("ja-JP");
+        const qty = qtyValue.toLocaleString("ja-JP");
+        const amount = amountValue.toLocaleString("ja-JP");
+        return `<tr><td class="border px-3 py-2">${content}</td><td class="border px-3 py-2 text-right">${unit}</td><td class="border px-3 py-2 text-right">${qty}</td><td class="border px-3 py-2 text-right">${amount}</td></tr>`;
+      }).join("");
+    }
+
+    function isSchoolInvoice(row) {
+      if (row.recipientKind === "school") return true;
+      if (row.recipientKind === "company") return false;
+      return row.sourceType === "csv";
+    }
+
+    function getRecipientHonorific(row) {
+      return isSchoolInvoice(row) ? "貴学" : "貴社";
+    }
+
+    function setBankTransferFeeNote(row) {
+      const honorific = getRecipientHonorific(row);
+      const el = document.getElementById("bankTransferFeeNote");
+      if (el) {
+        el.textContent = `※お振込み手数料は${honorific}ご負担にてお願いいたします。`;
+      }
+    }
+
+    function toggleFormatBySource(row) {
+      const isCsv = isSchoolInvoice(row);
+      document.getElementById("introManual").classList.toggle("hidden", isCsv);
+      document.getElementById("introCsv").classList.toggle("hidden", !isCsv);
+      document.getElementById("tableManual").classList.toggle("hidden", isCsv);
+      document.getElementById("tableCsv").classList.toggle("hidden", !isCsv);
+      document.getElementById("sheet").classList.toggle("csv-mode", isCsv);
+      document.getElementById("closingDateRow").classList.toggle("hidden", isCsv);
+      document.getElementById("invoiceNoLabel").textContent = isCsv ? "No." : "財 No";
+      const reg = String((invoiceFormat && invoiceFormat.registrationNo) || "").trim();
+      document.getElementById("registrationNo").textContent = reg ? `登録番号 ${reg}` : "";
+      document.getElementById("registrationNo").classList.toggle("hidden", isCsv);
+      document.getElementById("manualOrgInfo").classList.toggle("hidden", isCsv);
+      document.getElementById("csvOrgInfo").classList.toggle("hidden", !isCsv);
+      document.getElementById("federationContactLine").classList.toggle("hidden", isCsv);
+      document.getElementById("csvIssueDateTop").classList.toggle("hidden", !isCsv);
+    }
+
+    function renderManualRows(row) {
+      const taxRate = Number(row.taxRate);
+      const taxLabel = document.getElementById("manualTaxLabel");
+      document.getElementById("manualOccurrenceAmount").textContent = yen(row.occurrenceAmount);
+      document.getElementById("manualTaxAmount").textContent = yen(row.taxAmount);
+      document.getElementById("manualTotalAmount").textContent = yen(row.billedAmount);
+      setDescriptionText(row.description);
+      if (Number.isFinite(taxRate)) {
+        taxLabel.innerHTML = `今回消費税（<span id="taxRate">${taxRate}</span>%）`;
+      } else {
+        taxLabel.textContent = "今回消費税";
+      }
+    }
+
+    function setCsvTaxRowVisible(rowIds, visible) {
+      rowIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle("hidden", !visible);
+      });
+    }
+
+    function setCsvTaxExemptNote(visible) {
+      const el = document.getElementById("csvTotalTaxNote");
+      if (el) el.classList.toggle("hidden", !visible);
+    }
+
+    function renderCsvTaxSummary(row) {
+      const rate = row.taxRate;
+      const base = Number(row.baseAmount || 0);
+      const tax = Number(row.taxAmount || 0);
+      const billed = Number(row.billedAmount || 0);
+      const eightRows = ["csvEightRateRow", "csvEightTaxRow"];
+      const tenRows = ["csvTenRateRow", "csvTenTaxRow"];
+
+      document.getElementById("csvTotalAmount").textContent = yen(billed);
+      document.getElementById("billedAmountCsv").textContent = yen(billed);
+
+      const taxTableWrap = document.getElementById("csvTaxTableWrap");
+      const isTaxExempt = Number(rate) === 0;
+      setCsvTaxExemptNote(isTaxExempt);
+
+      if (isTaxExempt) {
+        setCsvTaxRowVisible(eightRows, false);
+        setCsvTaxRowVisible(tenRows, false);
+        if (taxTableWrap) taxTableWrap.classList.add("hidden");
+        return;
+      }
+
+      if (taxTableWrap) taxTableWrap.classList.remove("hidden");
+
+      if (Number(rate) === 8) {
+        setCsvTaxRowVisible(eightRows, true);
+        setCsvTaxRowVisible(tenRows, false);
+        document.getElementById("csvEightRateLabel").textContent = "8%対象";
+        document.getElementById("csvEightBaseAmount").textContent = yen(base);
+        document.getElementById("csvEightTaxAmount").textContent = yen(tax);
+        return;
+      }
+
+      setCsvTaxRowVisible(eightRows, false);
+      setCsvTaxRowVisible(tenRows, true);
+
+      if (rate === "other") {
+        document.getElementById("csvTenRateLabel").textContent = "対象";
+        document.getElementById("csvTenBaseAmount").textContent = yen(row.occurrenceAmount ?? base);
+        document.getElementById("csvTenTaxAmount").textContent = yen(tax);
+        return;
+      }
+
+      const rateLabel = Number.isFinite(Number(rate)) ? `${Number(rate)}%対象` : "10%対象";
+      document.getElementById("csvTenRateLabel").textContent = rateLabel;
+      document.getElementById("csvTenBaseAmount").textContent = yen(base);
+      document.getElementById("csvTenTaxAmount").textContent = yen(tax);
+    }
+
+    function notifyParentPdfResult(status, detail) {
+      const params = new URLSearchParams(window.location.search);
+      const invoiceId = params.get("id") || "";
+      if (!window.parent || window.parent === window) return;
+      window.parent.postMessage(
+        {
+          type: "invoice-pdf-download",
+          invoiceId,
+          status,
+          detail: detail || "",
+        },
+        window.location.origin
+      );
+    }
+
+    async function downloadPdf() {
+      const sheet = document.getElementById("sheet");
+      if (!sheet) {
+        notifyParentPdfResult("error", "請求書レイアウトが見つかりません");
+        return;
+      }
+      try {
+        await waitForStampImagesReady();
+        // html2canvas 直前に宛名を再フィット（長い法人名がPDFで溢れるのを防ぐ）
+        if (lastRecipientClientName) {
+          await setRecipientTitle(lastRecipientClientName);
+        } else {
+          fitRecipientTitleElement(document.getElementById("recipientTitle"));
+        }
+        const canvas = await html2canvas(sheet, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.98);
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF("p", "mm", "a4");
+        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+        pdf.save(`${currentPdfName}.pdf`);
+        notifyParentPdfResult("ok");
+      } catch (error) {
+        console.error(error);
+        notifyParentPdfResult("error", error.message);
+        alert("PDF保存に失敗しました: " + error.message);
+      }
+    }
+
+    function waitForImageElement(img) {
+      if (!img) return Promise.resolve();
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          img.removeEventListener("load", done);
+          img.removeEventListener("error", done);
+          resolve();
+        };
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", done, { once: true });
+      });
+    }
+
+    async function waitForStampImagesReady() {
+      const stampImages = Array.from(document.querySelectorAll(".stamp-image"));
+      await Promise.all(stampImages.map((img) => waitForImageElement(img)));
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    }
+
+    async function loadInvoice() {
+      await loadAndApplyInvoiceFormat();
+      try {
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("hideStamp") === "1") {
+        document.getElementById("sheet").classList.add("hide-stamp-area");
+      }
+      const mockType = params.get("mock");
+      if (mockType === "csv" || mockType === "csv-zero" || mockType === "bleague") {
+        const row = {
+          invoiceNo: "283",
+          issueDate: "2025-12-26",
+          closingDate: "",
+          dueDate: "2026-01-23",
+          clientName: mockType === "bleague"
+            ? "公益財団法人ジャパン・プロフェッショナル・バスケットボールリーグ"
+            : "北翔大学女子バスケットボール部",
+          clientContact: "",
+          clientZip: "",
+          clientAddress: "",
+          description: "第77回全日本大学バスケットボール選手権",
+          taxRate: mockType === "csv-zero" ? 0 : 10,
+          baseAmount: mockType === "csv-zero" ? 50000 : 29454,
+          taxAmount: mockType === "csv-zero" ? 0 : 2946,
+          billedAmount: mockType === "csv-zero" ? 50000 : 32400,
+          occurrenceAmount: mockType === "csv-zero" ? 50000 : 32400,
+          sourceType: "csv",
+          lineItems: [
+            { content: "第77回全日本大学バスケットボール選手権 チーム券代（税込）12/6〜9", unitPrice: 1200, amount: 32400 },
+            { content: "第77回全日本大学バスケットボール選手権 チーム券代（税込）12/10〜12", unitPrice: 1600, amount: 0 },
+            { content: "第77回全日本大学バスケットボール選手権 チーム券代（税込）12/13〜14", unitPrice: 2400, amount: 0 },
+          ],
+        };
+
+        document.getElementById("financeInvoiceNo").textContent = formatFinanceNo(row.issueDate, row.invoiceNo);
+        document.getElementById("issueDate").textContent = "発行日 " + (row.issueDate || "-");
+        document.getElementById("closingDate").textContent = row.closingDate || "-";
+        document.getElementById("dueDate").textContent = row.dueDate || "-";
+        toggleFormatBySource(row);
+        await setRecipientTitle(row.clientName);
+        currentPdfName = buildPdfFileName(row.issueDate, row.invoiceNo, row.clientName);
+        document.title = currentPdfName;
+        document.getElementById("federationContactLine").textContent = row.clientContact
+          ? `当連盟担当　${row.clientContact}`
+          : "当連盟担当";
+        document.getElementById("clientZip").textContent = row.clientZip ? `〒${row.clientZip}` : "";
+        document.getElementById("clientAddress").textContent = row.clientAddress || "";
+        setDescriptionText(row.description);
+        document.getElementById("billedAmount").textContent = yen(row.billedAmount);
+        const issueDateText = "請求日 " + formatDateJa(row.issueDate);
+        document.getElementById("issueDate").textContent = issueDateText;
+        document.getElementById("csvIssueDateTop").textContent = issueDateText;
+        document.getElementById("dueDate").textContent = formatDateJa(row.dueDate);
+        renderCsvTaxSummary(row);
+        renderLineItems(row);
+        setBankTransferFeeNote(row);
+        return;
+      }
+      if (mockType === "manual") {
+        const row = {
+          invoiceNo: "102",
+          issueDate: "2026-05-27",
+          closingDate: "2026-05-27",
+          dueDate: "2026-06-30",
+          clientName: "株式会社サンプル",
+          clientContact: "榎田",
+          clientZip: "157-0071",
+          clientAddress: "東京都世田谷区千歳台1-1-1",
+          description: "手動作成フォーマット確認用",
+          taxRate: 10,
+          baseAmount: 120000,
+          taxAmount: 12000,
+          billedAmount: 132000,
+          occurrenceAmount: 132000,
+          sourceType: "manual",
+          lineItems: [
+            { content: "手動作成フォーマット確認用", unitPrice: 120000, amount: 120000 },
+          ],
+        };
+
+        document.getElementById("financeInvoiceNo").textContent = formatFinanceNo(row.issueDate, row.invoiceNo);
+        document.getElementById("issueDate").textContent = "発行日 " + (row.issueDate || "-");
+        document.getElementById("closingDate").textContent = row.closingDate || "-";
+        document.getElementById("dueDate").textContent = row.dueDate || "-";
+        toggleFormatBySource(row);
+        await setRecipientTitle(row.clientName);
+        currentPdfName = buildPdfFileName(row.issueDate, row.invoiceNo, row.clientName);
+        document.title = currentPdfName;
+        document.getElementById("federationContactLine").textContent = row.clientContact
+          ? `当連盟担当　${row.clientContact}`
+          : "当連盟担当";
+        document.getElementById("clientZip").textContent = row.clientZip ? `〒${row.clientZip}` : "";
+        document.getElementById("clientAddress").textContent = row.clientAddress || "";
+        setDescriptionText(row.description);
+        document.getElementById("billedAmount").textContent = yen(row.billedAmount);
+        renderManualRows(row);
+        renderLineItems(row);
+        setBankTransferFeeNote(row);
+        return;
+      }
+
+      const id = params.get("id");
+      if (!id) {
+        throw new Error("請求書IDがありません");
+      }
+
+      const doc = await db.collection("invoices").doc(id).get();
+      if (!doc.exists) {
+        throw new Error("請求書が見つかりません");
+      }
+
+      const row = doc.data();
+      document.getElementById("financeInvoiceNo").textContent = formatFinanceNo(row.issueDate, row.invoiceNo);
+      document.getElementById("issueDate").textContent = "発行日 " + (row.issueDate || "-");
+      document.getElementById("closingDate").textContent = row.closingDate || "-";
+      document.getElementById("dueDate").textContent = row.dueDate || "-";
+      const isCsv = isSchoolInvoice(row);
+      currentPdfName = buildPdfFileName(row.issueDate, row.invoiceNo, row.clientName);
+      document.title = currentPdfName;
+      document.getElementById("federationContactLine").textContent = row.clientContact
+        ? `当連盟担当　${row.clientContact}`
+        : "当連盟担当";
+      document.getElementById("clientZip").textContent = row.clientZip ? `〒${row.clientZip}` : "";
+      document.getElementById("clientAddress").textContent = row.clientAddress || "";
+      setDescriptionText(row.description);
+      document.getElementById("billedAmount").textContent = yen(row.billedAmount);
+
+      if (isCsv) {
+        const issueDateText = "請求日 " + formatDateJa(row.issueDate);
+        document.getElementById("issueDate").textContent = issueDateText;
+        document.getElementById("csvIssueDateTop").textContent = issueDateText;
+        document.getElementById("dueDate").textContent = formatDateJa(row.dueDate);
+      }
+
+      toggleFormatBySource(row);
+      await setRecipientTitle(row.clientName);
+      if (isCsv) {
+        renderCsvTaxSummary(row);
+      } else {
+        renderManualRows(row);
+      }
+      renderLineItems(row);
+      setBankTransferFeeNote(row);
+      } finally {
+        applyInvoiceFormat(invoiceFormat);
+        // 書式適用後にレイアウトが変わることがあるので宛名を再フィット
+        if (lastRecipientClientName) {
+          await setRecipientTitle(lastRecipientClientName);
+        }
+      }
+    }
+
+    window.downloadPdf = downloadPdf;
+
+    window.addEventListener("load", async () => {
+      try {
+        if (window.STAMP_DATA) {
+          document.getElementById("federationStampImage").src = window.STAMP_DATA.federation || "";
+          document.getElementById("enokidaStampImage").src = window.STAMP_DATA.enokida || "";
+          document.getElementById("ajimiStampImage").src = window.STAMP_DATA.ajimi || "";
+        }
+        await loadInvoice();
+      } catch (error) {
+        console.error(error);
+        notifyParentPdfResult("error", error.message);
+        alert("請求書読み込みに失敗しました: " + error.message);
+        return;
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("download") === "1") {
+        // 宛名フィット完了後にPDF保存（setRecipientTitle は loadInvoice 内で await 済み想定だが念のため）
+        await downloadPdf();
+      }
+    });
+  </script>
+</body>
+</html>
