@@ -1651,7 +1651,8 @@
         + "6: 発行日\n"
         + "7: 締め日\n"
         + "8: 支払期限\n"
-        + "9: 税情報（税率/発生額/消費税額）",
+        + "9: 税情報（税率/発生額/消費税額）\n"
+        + "10: 当連盟担当（理事名）",
         "1"
       );
       if (choice === null) return;
@@ -1694,8 +1695,12 @@
         const taxPatch = buildTaxPatchByPrompt(row);
         if (!taxPatch) return;
         Object.assign(patch, taxPatch);
+      } else if (selected === "10") {
+        const v = prompt("当連盟担当（理事名・空欄可）", row.clientContact || "");
+        if (v === null) return;
+        patch.clientContact = v.trim();
       } else {
-        alert("1〜9 の番号で入力してください");
+        alert("1〜10 の番号で入力してください");
         return;
       }
 
