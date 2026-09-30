@@ -1620,7 +1620,7 @@
           return null;
         }
 
-        taxAmount = Math.round(baseAmount * taxRate / 100);
+        taxAmount = Math.floor((baseAmount * taxRate) / 100);
         occurrenceAmount = baseAmount + taxAmount;
         billedAmount = occurrenceAmount;
       }

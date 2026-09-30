@@ -16,13 +16,14 @@ function calculateTaxBreakdown(mode, taxRate, enteredAmount) {
       baseAmount = input;
       taxAmount = 0;
     } else {
-      baseAmount = Math.round(input / (1 + rate / 100));
-      taxAmount = input - baseAmount;
+      // 消費税は円未満切り捨て
+      taxAmount = Math.floor((input * rate) / (100 + rate));
+      baseAmount = input - taxAmount;
     }
     occurrenceAmount = input;
   } else {
     baseAmount = input;
-    taxAmount = Math.round(baseAmount * rate / 100);
+    taxAmount = Math.floor((baseAmount * rate) / 100);
     occurrenceAmount = baseAmount + taxAmount;
   }
 
